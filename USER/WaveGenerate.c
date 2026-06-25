@@ -16,6 +16,7 @@ extern TIM_HandleTypeDef WaveGenerate_htim1;
 extern TIM_HandleTypeDef WaveGenerate_htim2;
 
 #define TABLE_SIZE 1024U
+#define MAX_WAVE_HZ 100000U
 #define DAC_MAX 4095U
 #define MAX_REFRESH_HZ 1000000U
 #define TIM_CLK 64000000U
@@ -36,6 +37,9 @@ static uint16_t dac_buf[2][TABLE_SIZE];   // ch0 对应通道1，ch1 对应通�
  */
 void DAC_ConfigChannel(Wave_t wave1, double freq1, double phase_deg1, Wave_t wave2, double freq2, double phase_deg2)
 {
+
+    if(freq1 > MAX_WAVE_HZ || freq2 > MAX_WAVE_HZ) return;
+
     HAL_TIM_Base_Stop(&WaveGenerate_htim1);
     HAL_TIM_Base_Stop(&WaveGenerate_htim2);
     HAL_DAC_Stop_DMA(&WaveGenerate_hdac, DAC_CHANNEL_1);
@@ -111,6 +115,6 @@ void DAC_ConfigChannel(Wave_t wave1, double freq1, double phase_deg1, Wave_t wav
 
     // 确保两个定时器都处于停止状态（DAC_ConfigChannel 已经停止）
     // 同时写入 CEN 位，使 TIM6 和 TIM7 在几乎同一时刻开始计数
-    HAL_TIM_Base_Start(&WaveGenerate_htim1);
-    HAL_TIM_Base_Start(&WaveGenerate_htim2);
+    __HAL_TIM_ENABLE(&WaveGenerate_htim1);
+    __HAL_TIM_ENABLE(&WaveGenerate_htim2);
 }

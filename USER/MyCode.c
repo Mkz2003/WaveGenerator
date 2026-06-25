@@ -1,15 +1,17 @@
 #include "MyCode.h"
 
+#include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "Date.h"
 #include "WaveGenerate.h"
-#include "stm32g0xx_hal_gpio.h"
 
 uint8_t buf[1024];
 
 volatile int setting = 0;
-double freq = 1.0;
+volatile double freq = 1.0;
+Wave_t wave1 = SINE, wave2 = TRIANGLE;
 
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
@@ -31,11 +33,11 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 
 void Setup(void)
 {
-    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf));
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
 
     RTCTimeInit();
 
-    DAC_ConfigChannel(SQUARE, freq, 0, TRIANGLE, freq, 0);
+    DAC_ConfigChannel(wave1, freq, 0, wave2, freq, 0);
 
 
 }
@@ -51,7 +53,7 @@ void Loop(void)
     {
         HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
         HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);  
-        printf("%d-%d-%d %d:%d:%d.%03ld\r\n", sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1));
+        printf("%d-%d-%d %d:%d:%d.%03ld\n", sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1));
         // HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 
         LEDTime = t;
@@ -60,8 +62,17 @@ void Loop(void)
     if(setting)
     {
 
-        if(freq < 100000.0) freq *= 10.0; else freq = 1.0;
-        DAC_ConfigChannel(SQUARE, freq, 0, TRIANGLE, freq, 0);
+        // if(freq < 100000.0)
+        // {
+        //     // freq *= 10.0;
+        // }
+        // else
+        // {
+        //     freq = 1.0;
+            wave1 = wave1 != SINE ? SINE : SAWTOOTH;
+            wave2 = wave2 != TRIANGLE ? TRIANGLE : SQUARE;
+        // }
+        DAC_ConfigChannel(wave1, freq, 0, wave2, freq, 0);
         setting = 0;
     }
 
@@ -123,7 +134,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
     if(huart->Instance == USART2)
     {
-        HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf));
+        // HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
     }
 }
 
@@ -131,6 +142,22 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
     if(huart->Instance == USART2)
     {
+        if(isdigit(buf[0]))
+        {
+            double f = atof((const char*)buf);
+            if(f > 0.0) freq = f;
+        }
+        DAC_ConfigChannel(wave1, freq, 0, wave2, freq, 0);
+        buf[Size] = '\n';
         HAL_UART_Transmit_DMA(&huart2, buf, Size);
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
+    }
+}
+
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
+{
+    if(huart->Instance == USART2)
+    {
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
     }
 }
