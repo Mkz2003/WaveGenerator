@@ -71,6 +71,8 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define LED_Pin GPIO_PIN_13
 #define LED_GPIO_Port GPIOC
+#define TM1638_STB_Pin GPIO_PIN_12
+#define TM1638_STB_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

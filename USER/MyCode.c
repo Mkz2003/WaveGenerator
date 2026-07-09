@@ -6,30 +6,12 @@
 
 #include "Date.h"
 #include "WaveGenerate.h"
+#include "TM1638.h"
 
 uint8_t buf[1024];
 
-volatile int setting = 0;
-volatile double freq = 1.0;
+double freq = 1.0;
 Wave_t wave1 = SINE, wave2 = TRIANGLE;
-
-void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
-{
-    if(GPIO_Pin == GPIO_PIN_0)
-    {
-        HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 1);
-        setting = 1;
-    }
-}
-
-void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
-{
-    if(GPIO_Pin == GPIO_PIN_0)
-    {
-        HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, 0);
-    }    
-}
-
 
 void Setup(void)
 {
@@ -39,7 +21,7 @@ void Setup(void)
 
     DAC_ConfigChannel(wave1, freq, 0, wave2, freq, 0);
 
-
+    TM1638_DisplayBrightness(1, 8);
 }
 
 void Loop(void)
@@ -59,75 +41,19 @@ void Loop(void)
         LEDTime = t;
     }      
 
-    if(setting)
+    volatile uint32_t k = TM1638_ReadKeys();
+    extern const uint8_t segCode[17];
+    uint8_t data[16];
+    
+    for(int i = 7, p = 1; i >= 0; i--, p *= 10)
     {
-
-        // if(freq < 100000.0)
-        // {
-        //     // freq *= 10.0;
-        // }
-        // else
-        // {
-        //     freq = 1.0;
-            wave1 = wave1 != SINE ? SINE : SAWTOOTH;
-            wave2 = wave2 != TRIANGLE ? TRIANGLE : SQUARE;
-        // }
-        DAC_ConfigChannel(wave1, freq, 0, wave2, freq, 0);
-        setting = 0;
+        data[i * 2] = segCode[k / p % 10];
     }
-
-    // static uint32_t DACTime = 0;
-    // if((t = HAL_GetTick()) - DACTime >= 1000)
-    // {
-    //     static int i = 0;
-    //     switch(i++)
-    //     {
-    //         case 0:
-    //         {
-    //             DAC_ConfigChannel(SINE, 1000, 0, SQUARE, 1000, 0);
-    //             break;
-    //         }
-    //         case 1:
-    //         {
-    //             DAC_ConfigChannel(SINE, 1000, 0, TRIANGLE, 1000, 0);
-    //             break;
-    //         }
-    //         case 2:
-    //         {
-    //             DAC_ConfigChannel(SAWTOOTH, 1000, 0, TRIANGLE, 1000, 0);
-    //             break;
-    //         }
-    //         case 3:
-    //         {
-    //             DAC_ConfigChannel(SAWTOOTH, 1000, 0, SINE, 1000, 0);
-    //             break;
-    //         }
-    //         case 4:
-    //         {
-    //             DAC_ConfigChannel(SAWTOOTH, 2000, 0, SINE, 2000, 0);
-    //             break;
-    //         }
-    //         case 5:
-    //         {
-    //             DAC_ConfigChannel(SQUARE, 2000, 0, SINE, 2000, 0);
-    //             break;
-    //         }
-    //         case 6:
-    //         {
-    //             DAC_ConfigChannel(TRIANGLE, 2000, 0, SQUARE, 2000, 0);
-    //             break;
-    //         }
-    //         case 7:
-    //         {
-    //             DAC_ConfigChannel(SINE, 2000, 0, SQUARE, 2000, 0);
-    //             break;
-    //         }
-    //     }
-    //     if(i >= 8) i = 0;
-    //     DACTime = t;
-    // }    
-
-
+    for(int i = 0; i < 8; i++)
+    {
+        data[i * 2 + 1] = 0xFF & !(k & (0x1 << (i * 4)));
+    }
+    TM1638_DisplayDigits(data);
 }
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)

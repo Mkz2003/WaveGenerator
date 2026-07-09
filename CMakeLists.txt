@@ -49,6 +49,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/USER/io.c
     ${CMAKE_CURRENT_LIST_DIR}/USER/Date.c
     ${CMAKE_CURRENT_LIST_DIR}/USER/WaveGenerate.c
+    ${CMAKE_CURRENT_LIST_DIR}/USER/TM1638.c
 )
 
 # Add include paths

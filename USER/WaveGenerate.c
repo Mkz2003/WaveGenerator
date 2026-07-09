@@ -1,8 +1,5 @@
 #include "WaveGenerate.h"
 
-#include "dac.h"
-#include "tim.h"
-
 #include <math.h>
 
 #include "MyCode.h"
