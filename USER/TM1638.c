@@ -1,5 +1,8 @@
 #include "TM1638.h"
 
+#include <stdio.h>
+#include <string.h>
+
 #include "MyCode.h"
 
 // STB控制宏
@@ -9,7 +12,7 @@
 #define TM1638_hspi hspi2
 extern SPI_HandleTypeDef TM1638_hspi;
 
-const uint8_t segCode[17] = {
+const uint8_t segCode[10] = {
     0x3F, // 0
     0x06, // 1
     0x5B, // 2
@@ -19,28 +22,13 @@ const uint8_t segCode[17] = {
     0x7D, // 6
     0x07, // 7
     0x7F, // 8
-    0x6F, // 9
-    0x77, // A
-    0x7C, // b
-    0x39, // C
-    0x5E, // d
-    0x79, // E
-    0x71, // F
-    0x00  // 灭
+    0x6F  // 9
 };
 
 // 发送1字节
 static inline void TM1638_WriteByte(uint8_t data)
 {
     HAL_SPI_Transmit(&TM1638_hspi, &data, 1, HAL_MAX_DELAY);
-}
-
-// 接收4字节
-static inline uint32_t TM1638_ReadByte(void)
-{
-    uint32_t rx_data = 0;
-    HAL_SPI_Receive(&TM1638_hspi, (uint8_t*)&rx_data, 4, HAL_MAX_DELAY);
-    return rx_data;
 }
 
 // 发送带起始/停止条件的命令
@@ -51,8 +39,8 @@ static inline void TM1638_SendCommand(uint8_t cmd)
     TM1638_STB_HIGH();  // 结束通信
 }
 
-// 发送调整显示亮度的命令
-void TM1638_DisplayBrightness(uint8_t on, uint8_t brightness)
+// 发送调整显示亮度的命令，范围0~8
+void TM1638_DisplayBrightness(uint8_t brightness)
 {
     if(brightness > 8) return;
     uint8_t cmd = 0x80 | ((brightness + 7) & 0x0F);
@@ -71,9 +59,13 @@ uint32_t TM1638_ReadKeys(void)
     // 等待TM1638准备数据，并给STM32的SPI方向切换留出时间（约5~10us）
     for (volatile uint32_t i = 0; i < 50; i++);
     
-    key_value = TM1638_ReadByte(); // 读取按键数据（MOSI自动变输入）
-    
+    HAL_SPI_Receive(&TM1638_hspi, (uint8_t*)&key_value, 4, HAL_MAX_DELAY); // 读取按键数据
+
     TM1638_STB_HIGH();         // 拉高STB，结束帧
+
+    // 多键按下检测，关闭所有灯光
+    if((key_value & (key_value - 1)) != 0) TM1638_DisplayBrightness(0); else TM1638_DisplayBrightness(8);
+
     return key_value;
 }
 
@@ -84,4 +76,16 @@ void TM1638_DisplayDigits(uint8_t data[16])
     TM1638_WriteByte(0xC0);   // 起始地址
     HAL_SPI_Transmit(&TM1638_hspi, data, 16, HAL_MAX_DELAY);
     TM1638_STB_HIGH();
+}
+
+void DoubleToSegments(double value, uint8_t data[16])
+{
+    uint32_t n = value;
+    for(int i = 7; i >= 0; i--)
+    {
+        data[i * 2] = segCode[n % 10];
+        n /= 10;
+        if(n == 0) break;
+    }
+    data[14] |= 0x80;
 }

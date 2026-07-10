@@ -21,7 +21,7 @@ void Setup(void)
 
     DAC_ConfigChannel(wave1, freq, 0, wave2, freq, 0);
 
-    TM1638_DisplayBrightness(1, 8);
+
 }
 
 void Loop(void)
@@ -41,17 +41,12 @@ void Loop(void)
         LEDTime = t;
     }      
 
-    volatile uint32_t k = TM1638_ReadKeys();
-    extern const uint8_t segCode[17];
-    uint8_t data[16];
-    
-    for(int i = 7, p = 1; i >= 0; i--, p *= 10)
-    {
-        data[i * 2] = segCode[k / p % 10];
-    }
+    uint32_t k = TM1638_ReadKeys();
+    uint8_t data[16] = {0};
+    DoubleToSegments(k, data);
     for(int i = 0; i < 8; i++)
     {
-        data[i * 2 + 1] = 0xFF & !(k & (0x1 << (i * 4)));
+        data[i * 2 + 1] = 0xFF & !!(k & (0x1 << (i * 4)));
     }
     TM1638_DisplayDigits(data);
 }
@@ -60,7 +55,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
     if(huart->Instance == USART2)
     {
-        // HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
+        HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
     }
 }
 
@@ -68,12 +63,6 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
     if(huart->Instance == USART2)
     {
-        if(isdigit(buf[0]))
-        {
-            double f = atof((const char*)buf);
-            if(f > 0.0) freq = f;
-        }
-        DAC_ConfigChannel(wave1, freq, 0, wave2, freq, 0);
         buf[Size] = '\n';
         HAL_UART_Transmit_DMA(&huart2, buf, Size);
         HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
