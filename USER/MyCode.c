@@ -26,16 +26,16 @@ void Setup(void)
 
 void Loop(void)
 {
-    RTC_DateTypeDef sDate;
-    RTC_TimeTypeDef sTime;
+    static RTC_DateTypeDef sDate;
+    static RTC_TimeTypeDef sTime;
 
     uint32_t t;
     static uint32_t LEDTime = 0;
-    if((t = HAL_GetTick()) - LEDTime >= 1000)
+    if((t = HAL_GetTick()) - LEDTime >= 100)
     {
         HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
         HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);  
-        printf("%d-%d-%d %d:%d:%d.%03ld\n", sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1));
+        // printf("%d-%d-%d %d:%d:%d.%03ld\n", sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1));
         // HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 
         LEDTime = t;
@@ -43,7 +43,8 @@ void Loop(void)
 
     uint32_t k = TM1638_ReadKeys();
     uint8_t data[16] = {0};
-    DoubleToSegments(k, data);
+    // DoubleToSegments(k, data);
+    DoubleToSegments(sTime.Hours * 10000 + sTime.Minutes * 100 + sTime.Seconds + (1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1)) * 0.001, data);
     for(int i = 0; i < 8; i++)
     {
         data[i * 2 + 1] = 0xFF & !!(k & (0x1 << (i * 4)));

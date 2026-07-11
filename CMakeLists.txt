@@ -45,11 +45,11 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
-    ${CMAKE_CURRENT_LIST_DIR}/USER/MyCode.c
-    ${CMAKE_CURRENT_LIST_DIR}/USER/io.c
-    ${CMAKE_CURRENT_LIST_DIR}/USER/Date.c
     ${CMAKE_CURRENT_LIST_DIR}/USER/WaveGenerate.c
     ${CMAKE_CURRENT_LIST_DIR}/USER/TM1638.c
+    ${CMAKE_CURRENT_LIST_DIR}/USER/MyCode.c
+    ${CMAKE_CURRENT_LIST_DIR}/USER/io.c
+    ${CMAKE_CURRENT_LIST_DIR}/USER/Date.c    
 )
 
 # Add include paths
