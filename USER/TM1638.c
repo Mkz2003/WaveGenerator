@@ -1,5 +1,6 @@
 #include "TM1638.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -12,6 +13,7 @@
 #define TM1638_hspi hspi2
 extern SPI_HandleTypeDef TM1638_hspi;
 
+const uint8_t segNum = 8;
 const uint8_t segCode[10] = {
     0x3F, // 0
     0x06, // 1
@@ -64,7 +66,7 @@ uint32_t TM1638_ReadKeys(void)
     TM1638_STB_HIGH();         // 拉高STB，结束帧
 
     // 多键按下检测，关闭所有灯光
-    if((key_value & (key_value - 1)) != 0) TM1638_DisplayBrightness(0); else TM1638_DisplayBrightness(8);
+    // if((key_value & (key_value - 1)) != 0) TM1638_DisplayBrightness(0); else TM1638_DisplayBrightness(8);
 
     return key_value;
 }
@@ -80,12 +82,30 @@ void TM1638_DisplayDigits(uint8_t data[16])
 
 void DoubleToSegments(double value, uint8_t data[16])
 {
-    uint32_t n = value;
-    for(int i = 7; i >= 0; i--)
+    char s[segNum + 2];
+    char sformat[8];
+    char* ps = s;
+    uint8_t* pdata = data;
+
+    if(segNum > 8) return;
+
+    snprintf(sformat, sizeof(sformat), "%%#%d.2f", segNum + 1);
+    snprintf(s, sizeof(s), sformat, value);
+
+
+    while(*ps != '\0' && pdata < data + segNum * 2)
     {
-        data[i * 2] = segCode[n % 10];
-        n /= 10;
-        if(n == 0) break;
+        if(isdigit((uint8_t)*ps))
+        {
+            *pdata = segCode[*ps - '0'];
+            if(*(ps + 1) == '.')
+            {
+                *pdata |= 0x80;
+                ps += 1;
+            }
+            
+        }
+        pdata += 2;    
+        ps += 1;
     }
-    data[14] |= 0x80;
 }
