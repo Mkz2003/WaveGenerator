@@ -32,7 +32,7 @@ static uint16_t dac_buf[2][TABLE_SIZE];   // ch0 对应通道1，ch1 对应通�
  * @param freq 目标频率 (Hz), 1~100000
  * @param phase_deg 初始相位（度）
  */
-void DAC_ConfigChannel(Wave_t wave1, double freq1, double phase_deg1, Wave_t wave2, double freq2, double phase_deg2)
+void DAC_ConfigChannel(Wave_t wave1, float freq1, float phase_deg1, Wave_t wave2, float freq2, float phase_deg2)
 {
 
     if(freq1 > MAX_WAVE_HZ || freq2 > MAX_WAVE_HZ) return;
@@ -43,8 +43,8 @@ void DAC_ConfigChannel(Wave_t wave1, double freq1, double phase_deg1, Wave_t wav
     HAL_DAC_Stop_DMA(&WaveGenerate_hdac, DAC_CHANNEL_2);
 
     Wave_t wave[2] = {wave1, wave2};
-    double freq[2] = {freq1, freq2};
-    double phase_deg[2] = {phase_deg1, phase_deg2};
+    float freq[2] = {freq1, freq2};
+    float phase_deg[2] = {phase_deg1, phase_deg2};
 
     for(int ch = 0; ch < 2; ch++)
     {
@@ -53,31 +53,31 @@ void DAC_ConfigChannel(Wave_t wave1, double freq1, double phase_deg1, Wave_t wav
         uint32_t Fs = (uint32_t)(freq[ch] * N);
 
         // 2. 生成带相位偏移的缓冲区
-        uint32_t offset = (uint32_t)(phase_deg[ch] / 360.0 * N + 0.5) % N;  // 四舍五入循环偏移量
+        uint32_t offset = (uint32_t)(phase_deg[ch] / 360.0f * N + 0.5f) % N;  // 四舍五入循环偏移量
         for(uint32_t i = 0; i < N; i++)
         {
-            double src_index = ((i + offset) % N) * M_TWOPI / N;    // [0, 2π)
+            float src_index = ((i + offset) % N) * (float)M_TWOPI / N;    // [0, 2π)
 
             switch(wave[ch])
             {
                 case SINE:
                 {
-                    dac_buf[ch][i] = (uint16_t)((sin(src_index) * (DAC_MAX / 2.0)) + (DAC_MAX / 2.0));
+                    dac_buf[ch][i] = (uint16_t)((sinf(src_index) * (DAC_MAX / 2.0f)) + (DAC_MAX / 2.0f));
                     break;
                 }
                 case SQUARE:
                 {
-                    dac_buf[ch][i] = (uint16_t)((src_index < M_PI) * DAC_MAX);
+                    dac_buf[ch][i] = (uint16_t)((src_index < (float)M_PI) * DAC_MAX);
                     break;
                 }
                 case TRIANGLE:
                 {
-                    dac_buf[ch][i] = (uint16_t)((1.0 - fabs(src_index / M_PI - 1.0)) * DAC_MAX);
+                    dac_buf[ch][i] = (uint16_t)((1.0f - fabsf(src_index / (float)M_PI - 1.0f)) * DAC_MAX);
                     break;
                 }
                 case SAWTOOTH:
                 {
-                    dac_buf[ch][i] = (uint16_t)(src_index / M_TWOPI * DAC_MAX);
+                    dac_buf[ch][i] = (uint16_t)(src_index / (float)M_TWOPI * DAC_MAX);
                     break;
                 }
             }

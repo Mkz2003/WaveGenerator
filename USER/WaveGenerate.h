@@ -11,6 +11,6 @@ typedef enum
     SAWTOOTH
 } Wave_t;
 
-void DAC_ConfigChannel(Wave_t wave1, double freq1, double phase_deg1, Wave_t wave2, double freq2, double phase_deg2);
+void DAC_ConfigChannel(Wave_t wave1, float freq1, float phase_deg1, Wave_t wave2, float freq2, float phase_deg2);
 
 #endif // __WAVEGENERATE_H
