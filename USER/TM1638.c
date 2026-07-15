@@ -216,7 +216,7 @@ void FloatToSegments(float value, uint8_t data[16])
             sign[0] = '-';    
         }
 
-        float pow10fp = powf(10.0f, fractional_precision);
+        const float pow10fp = powf(10.0f, fractional_precision);
         int value_t1 = truncf(value);
         int value_t100 = truncf(value * pow10fp) - value_t1 * pow10fp;
 

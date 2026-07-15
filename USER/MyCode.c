@@ -65,7 +65,7 @@ void Setup(void)
   */
 void Loop(void)
 {
-    static float Vref = 0.0f, Vbat = 0.0f, Temp = 0.0f; 
+    static float Vdda = 0.0f, Vbat = 0.0f, Temp = 0.0f; 
     static RTC_DateTypeDef sDate;
     static RTC_TimeTypeDef sTime;
 
@@ -74,27 +74,42 @@ void Loop(void)
     TASK_START(LED, 1000)
     {
         HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-        HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);  
-        printf("%d-%d-%d %d:%d:%d.%03ld\n", sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1));
-        HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+        HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+        const uint8_t fractional_precision = 4;
+        const float pow10fp = pow(10.0f, fractional_precision);
+
+        float vrefint_cal_vref = (VREFINT_CAL_VREF / 1000.0f);
+        float temperature_cal1_temp = TEMPSENSOR_CAL1_TEMP;
+        float temperature_cal2_temp = TEMPSENSOR_CAL2_TEMP;
+        float vrefint_cal_addr = (*VREFINT_CAL_ADDR) << 4;
+        float tempsensor_cal1_addr = (*TEMPSENSOR_CAL1_ADDR) << 4;
+        float tempsensor_cal2_addr = (*TEMPSENSOR_CAL2_ADDR) << 4;
+        Vdda = vrefint_cal_vref * vrefint_cal_addr / adcval.Vref;
+        Vbat = adcval.Vbat * Vdda / (float)(1 << 16) * 3.0f;
+        // Temp = t1 + ((ADC) - adc1) * (t2 - t1) / (adc2 - adc1)
+        Temp = temperature_cal1_temp
+                    + (adcval.Temp / vrefint_cal_vref * Vdda - tempsensor_cal1_addr)
+                        * (temperature_cal2_temp - temperature_cal1_temp)
+                        / (tempsensor_cal2_addr - tempsensor_cal1_addr);
+
+        int Vdda_t1 = truncf(Vdda), Vdda_t100 = truncf(Vdda * pow10fp) - Vdda_t1 * pow10fp;
+        int Vbat_t1 = truncf(Vbat), Vbat_t100 = truncf(Vbat * pow10fp) - Vbat_t1 * pow10fp;
+        int Temp_t1 = truncf(Temp), Temp_t100 = truncf(Temp * pow10fp) - Temp_t1 * pow10fp;
+        printf("%2d-%2d-%2d %2d:%02d:%02d.%03ld\n"
+                "Vdda: %d.%0*d, Vbat: %d.%0*d, Temp: %d.%0*d\n"
+                "\n",
+                sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1),
+                Vdda_t1, fractional_precision, Vdda_t100, Vbat_t1, fractional_precision, Vbat_t100, Temp_t1, fractional_precision, Temp_t100
+                );
+        // HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
 
     }
     TASK_END(LED)
 
     TASK_START(ADCSAMPLING, 100)
     {
-        float vrefint_cal_vref = (VREFINT_CAL_VREF / 1000.0f);
-        float temperature_cal1_temp = TEMPSENSOR_CAL1_TEMP;
-        float temperature_cal2_temp = TEMPSENSOR_CAL2_TEMP;
-        float vrefint_cal_addr = (*VREFINT_CAL_ADDR) << 4;
-        float tempsensor_cal1_addr = (*TEMPSENSOR_CAL1_ADDR) << 4;;
-        float tempsensor_cal2_addr = (*TEMPSENSOR_CAL2_ADDR) << 4;;
-        Vref = vrefint_cal_vref / vrefint_cal_addr * adcval.Vref;
-        Vbat = adcval.Vbat * Vref / (float)(1 << 16) * 4.0f;
-        Temp = temperature_cal1_temp
-                    + (adcval.Temp * vrefint_cal_vref / Vref - tempsensor_cal1_addr)
-                        * (temperature_cal2_temp - temperature_cal1_temp)
-                        / (tempsensor_cal2_addr - tempsensor_cal1_addr);
+
     }
     TASK_END(ADCSAMPLING)
 
@@ -114,7 +129,7 @@ void Loop(void)
 
         
         uint8_t data[16] = {0};
-        FloatToSegments(Temp, data);
+        FloatToSegments(freq, data);
         // DoubleToSegments(sTime.Hours * 10000 + sTime.Minutes * 100 + sTime.Seconds + (1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1)) * 0.001, data);
         for(int i = 0; i < 8; i++)
         {
