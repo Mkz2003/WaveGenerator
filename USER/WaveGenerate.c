@@ -1,16 +1,22 @@
+/* Includes ------------------------------------------------------------------*/
 #include "WaveGenerate.h"
 
 #include <math.h>
 
-#include "MyCode.h"
+#include "main.h"
 
+/* Private includes ----------------------------------------------------------*/
+/* Private typedef -----------------------------------------------------------*/
+typedef enum
+{
+    DAC_CH1 = 0,
+    DAC_CH2 = 1
+} DAC_Channel_t;
+
+/* Private define ------------------------------------------------------------*/
 #define WaveGenerate_hdac hdac1
 #define WaveGenerate_htim1 htim6
 #define WaveGenerate_htim2 htim7
-
-extern DAC_HandleTypeDef WaveGenerate_hdac;
-extern TIM_HandleTypeDef WaveGenerate_htim1;
-extern TIM_HandleTypeDef WaveGenerate_htim2;
 
 #define TABLE_SIZE 1024U
 #define MAX_WAVE_HZ 100000U
@@ -18,18 +24,21 @@ extern TIM_HandleTypeDef WaveGenerate_htim2;
 #define MAX_REFRESH_HZ 1000000U
 #define TIM_CLK 64000000U
 
-typedef enum
-{
-    DAC_CH1 = 0,
-    DAC_CH2 = 1
-} DAC_Channel_t;
+/* Private macro -------------------------------------------------------------*/
+/* Private variables ---------------------------------------------------------*/
+static uint16_t dac_buf[2][TABLE_SIZE];
 
-static uint16_t dac_buf[2][TABLE_SIZE];   // ch0 对应通道1，ch1 对应通道2
+/* Private function prototypes -----------------------------------------------*/
+/* Exported Constants --------------------------------------------------------*/
+extern DAC_HandleTypeDef WaveGenerate_hdac;
+extern TIM_HandleTypeDef WaveGenerate_htim1;
+extern TIM_HandleTypeDef WaveGenerate_htim2;
 
+/* Exported functions --------------------------------------------------------*/
 /**
- * @brief 为指定 DAC 通道配置频率和相位（不启动定时器）
+ * @brief 为DAC通道配置频率和相位
  * @param ch   通道选择 (DAC_CH1 / DAC_CH2)
- * @param freq 目标频率 (Hz), 1~100000
+ * @param freq 目标频率 (Hz), 0~100000
  * @param phase_deg 初始相位（度）
  */
 void DAC_ConfigChannel(Wave_t wave1, float freq1, float phase_deg1, Wave_t wave2, float freq2, float phase_deg2)

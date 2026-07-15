@@ -1,4 +1,6 @@
-#include "usart.h"
+#include "main.h"
+
+extern UART_HandleTypeDef huart2;
 
 #ifdef __GNUC__
 int __io_putchar(int ch)
