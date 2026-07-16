@@ -11,16 +11,28 @@
   */
 typedef enum
 {
-    SINE = 0,
+    DC = 0,
+    SINE,
     SQUARE,
     TRIANGLE,
     SAWTOOTH
 } Wave_t;
 
+/**
+  * @brief  波形参数定义
+  */
+typedef struct
+{
+  Wave_t wave;
+  float freq;
+  float Vrms;
+  float phase_deg;
+} DAC_ChannalConfig_t;
+
 /* Exported constants --------------------------------------------------------*/
 /* Exported macro ------------------------------------------------------------*/
 /* Exported functions prototypes ---------------------------------------------*/
-void DAC_ConfigChannel(Wave_t wave1, float freq1, float phase_deg1, Wave_t wave2, float freq2, float phase_deg2);
+void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2, float Vdda);
 
 /* Private defines -----------------------------------------------------------*/
 

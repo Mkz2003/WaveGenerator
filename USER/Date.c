@@ -32,7 +32,7 @@ void RTCTimeInit(void)
 	RTC_TimeTypeDef sTime = {
 		.Hours = HOURS,
 		.Minutes = MINUTES,
-		.Seconds = SECONDS + 4
+		.Seconds = SECONDS
 	};
 	HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 	HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);

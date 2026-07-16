@@ -15,6 +15,20 @@
             "svdPath": "${workspaceFolder}/STM32G071.svd"
         },
         {
+            "name": "CMSIS-DAP Debug (G0) (Debug)",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceFolder}",
+            "serverpath": "openocd",
+            "configFiles": [
+                "${workspaceFolder}/openocd.cfg"
+            ],
+            "executable": "${workspaceFolder}/build/Debug/${workspaceFolderBasename}.elf",
+            "device": "STM32G071xx",
+            "svdPath": "${workspaceFolder}/STM32G071.svd"
+        },
+        {
             "name": "OpenOCD Debug",
             "type": "cppdbg",
             "request": "launch",

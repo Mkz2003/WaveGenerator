@@ -21,10 +21,10 @@ typedef struct
 } Key_t;    // (k, ks)
 
 /* Private define ------------------------------------------------------------*/
-#define TM1638_hspi hspi2
-static const uint8_t longpressCount = 10;  // 判断单击与长按的阈值(ms)
-static const uint8_t segNum = 8;   // 数码管段数
-static const uint8_t fractional_precision = 4; // 向数码管输出浮点数的小数位数
+#define TM1638_hspi             hspi2
+#define longpressCount          10      // 判断单击与长按的阈值(ms)
+#define segNum                  6       // 数码管段数
+#define fractional_precision    2       // 向数码管输出浮点数的小数位数
 
 /* Private macro -------------------------------------------------------------*/
 #define TM1638_STB_LOW()   HAL_GPIO_WritePin(TM1638_STB_GPIO_Port, TM1638_STB_Pin, GPIO_PIN_RESET)
@@ -77,7 +77,7 @@ uint32_t TM1638_ReadKeys(void)
     
     TM1638_STB_LOW();          // 拉低STB，启动帧
     TM1638_WriteByte(0x42); // 发送读命令
-    HAL_SPI_Receive(&TM1638_hspi, (uint8_t*)&rxData, 4, 1); // 读取按键数据，若失败则rxData默认0
+    HAL_SPI_Receive(&TM1638_hspi, (uint8_t*)&rxData, 4, 10); // 读取按键数据，若失败则rxData默认0
     TM1638_STB_HIGH();         // 拉高STB，结束帧
 
     // 多键按下检测，关闭所有灯光
@@ -216,9 +216,10 @@ void FloatToSegments(float value, uint8_t data[16])
             sign[0] = '-';    
         }
 
-        const float pow10fp = powf(10.0f, fractional_precision);
-        int value_t1 = truncf(value);
-        int value_t100 = truncf(value * pow10fp) - value_t1 * pow10fp;
+        const int pow10fp = powf(10.0f, fractional_precision);
+        int value100 = roundf(value * pow10fp);
+        int value_t1 = value100 / pow10fp;
+        int value_t100 = value100 % pow10fp;
 
         // 计算输出字符串长度
         int len = snprintf(NULL, 0, "%s%d.%0*d", sign, value_t1, fractional_precision, value_t100);

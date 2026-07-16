@@ -15,6 +15,8 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
+const uint32_t VrmsRemainTime = 2000;
+
 /* Private macro -------------------------------------------------------------*/
 #define TASK_INIT() typeof(HAL_GetTick()) __task_tick;
 
@@ -30,12 +32,15 @@
 /* Private variables ---------------------------------------------------------*/
 uint8_t buf[1024];
 
-float freq = 1.0f;
-Wave_t wave1 = SINE, wave2 = TRIANGLE;
+uint32_t freq100 = 1000 * 100;
+uint32_t Vrms100 = 1 * 100;
+Wave_t wave1 = SINE, wave2 = DC;
 
 volatile struct {volatile uint16_t Temp, Vref, Vbat;} adcval = {0};
 
 /* Private function prototypes -----------------------------------------------*/
+static uint32_t Int100Digits(uint32_t v100);
+
 /* Exported Constants --------------------------------------------------------*/
 extern RTC_HandleTypeDef hrtc;
 extern UART_HandleTypeDef huart2;
@@ -52,7 +57,10 @@ void Setup(void)
 
     RTCTimeInit();
 
-    DAC_ConfigChannel(wave1, freq, 0, wave2, freq, 0);
+    DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, 1.0f, 0.0f};
+    DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, 1.0f, 0.0f};
+
+    DAC_ConfigChannel(dac_ch1, dac_ch2, 3.3f);
 
 
     HAL_ADCEx_Calibration_Start(&hadc1);
@@ -71,31 +79,37 @@ void Loop(void)
 
     TASK_INIT()
 
-    TASK_START(LED, 1000)
+    TASK_START(ADCSAMPLING, 1)
     {
-        HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-        HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 
-        const uint8_t fractional_precision = 4;
-        const float pow10fp = pow(10.0f, fractional_precision);
 
-        float vrefint_cal_vref = (VREFINT_CAL_VREF / 1000.0f);
+        float vrefint_cal_vref = (VREFINT_CAL_VREF / 1000.0);
         float temperature_cal1_temp = TEMPSENSOR_CAL1_TEMP;
         float temperature_cal2_temp = TEMPSENSOR_CAL2_TEMP;
         float vrefint_cal_addr = (*VREFINT_CAL_ADDR) << 4;
         float tempsensor_cal1_addr = (*TEMPSENSOR_CAL1_ADDR) << 4;
         float tempsensor_cal2_addr = (*TEMPSENSOR_CAL2_ADDR) << 4;
         Vdda = vrefint_cal_vref * vrefint_cal_addr / adcval.Vref;
-        Vbat = adcval.Vbat * Vdda / (float)(1 << 16) * 3.0f;
+        Vbat = adcval.Vbat * Vdda / (float)(1 << 16) * 3.0;
         // Temp = t1 + ((ADC) - adc1) * (t2 - t1) / (adc2 - adc1)
         Temp = temperature_cal1_temp
                     + (adcval.Temp / vrefint_cal_vref * Vdda - tempsensor_cal1_addr)
                         * (temperature_cal2_temp - temperature_cal1_temp)
                         / (tempsensor_cal2_addr - tempsensor_cal1_addr);
+    }
+    TASK_END(ADCSAMPLING)
 
+    TASK_START(LED, 1000)
+    {
+        HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+        HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+        const uint8_t fractional_precision = 4;
+        const float pow10fp = powf(10.0f, fractional_precision);
         int Vdda_t1 = truncf(Vdda), Vdda_t100 = truncf(Vdda * pow10fp) - Vdda_t1 * pow10fp;
         int Vbat_t1 = truncf(Vbat), Vbat_t100 = truncf(Vbat * pow10fp) - Vbat_t1 * pow10fp;
         int Temp_t1 = truncf(Temp), Temp_t100 = truncf(Temp * pow10fp) - Temp_t1 * pow10fp;
+
         printf("%2d-%2d-%2d %2d:%02d:%02d.%03ld\n"
                 "Vdda: %d.%0*d, Vbat: %d.%0*d, Temp: %d.%0*d\n"
                 "\n",
@@ -107,29 +121,94 @@ void Loop(void)
     }
     TASK_END(LED)
 
-    TASK_START(ADCSAMPLING, 100)
-    {
-
-    }
-    TASK_END(ADCSAMPLING)
-
     TASK_START(WAVECTRL, 20)
     {
+
+        const uint32_t freq100Max = 10000000, freq100Min = 10;
+        const uint32_t Vrms100Max = 100, Vrms100Min = 1;
+
         uint32_t keyValue = TM1638_ReadKeys();
+        uint8_t waveConfig = 0;
+        static uint32_t VrmsSelectTick = 0x7FFFFFFF;
 
         if(TM1638_KeyStatus(3, 1) == KEY_CLICK || TM1638_KeyStatus(3, 1) == KEY_LONGPRESS)
         {
-            freq += 1.0f;
+            freq100 += Int100Digits(freq100);
+            if(freq100 > freq100Max) freq100 = freq100Max;
+            waveConfig = 1;
+            VrmsSelectTick -= VrmsRemainTime;   // 不让显示Vrms以显示Freq
         }
         if(TM1638_KeyStatus(3, 3) == KEY_CLICK || TM1638_KeyStatus(3, 3) == KEY_LONGPRESS)
         {
-            freq -= 1.0f;
+            freq100 -= Int100Digits(freq100 - Int100Digits(freq100));
+            if(freq100 < freq100Min) freq100 = freq100Min;
+            waveConfig = 1;
+            VrmsSelectTick -= VrmsRemainTime;   // 不让显示Vrms以显示Freq
+        }
+        if(TM1638_KeyStatus(3, 5) == KEY_CLICK || TM1638_KeyStatus(3, 5) == KEY_LONGPRESS)
+        {
+            Vrms100 += Int100Digits(Vrms100);
+            if(Vrms100 > Vrms100Max) Vrms100 = Vrms100Max;
+            waveConfig = 1;
+            VrmsSelectTick = HAL_GetTick();
+        }
+        if(TM1638_KeyStatus(3, 7) == KEY_CLICK || TM1638_KeyStatus(3, 7) == KEY_LONGPRESS)
+        {
+            Vrms100 -= Int100Digits(Vrms100 - Int100Digits(Vrms100));
+            if(Vrms100 < Vrms100Min) Vrms100 = Vrms100Min;
+            waveConfig = 1;
+            VrmsSelectTick = HAL_GetTick();
         }
 
+        static uint8_t waveSelect_entryFlag = 1;    // 令按键单击和长按只触发一次事件
+        if(TM1638_KeyStatus(3, 2) == KEY_CLICK || TM1638_KeyStatus(3, 2) == KEY_LONGPRESS)
+        {
+            if(waveSelect_entryFlag != 0)
+            {
+                Wave_t* wave = &wave1;
+                switch(*wave)
+                {
+                    case SINE:
+                    {
+                        *wave = TRIANGLE;
+                        break;
+                    }
+                    case TRIANGLE:
+                    {
+                        *wave = SQUARE;
+                        break;
+                    }
+                    case SQUARE:
+                    {
+                        *wave = SAWTOOTH;
+                        break;
+                    }
+                    case SAWTOOTH:
+                    default:
+                    {
+                        *wave = SINE;
+                        break;
+                    }
+                }
+                waveConfig = 1;
+                waveSelect_entryFlag = 0;
+            }
+        }
+        else
+        {
+            waveSelect_entryFlag = 1;
+        }
 
+        if(waveConfig != 0)
+        {
+            DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
+            DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
+            DAC_ConfigChannel(dac_ch1, dac_ch2, Vdda);
+        }
         
         uint8_t data[16] = {0};
-        FloatToSegments(freq, data);
+
+        FloatToSegments((HAL_GetTick() - VrmsSelectTick < VrmsRemainTime ? Vrms100 : freq100) / 100.0f, data);
         // DoubleToSegments(sTime.Hours * 10000 + sTime.Minutes * 100 + sTime.Seconds + (1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1)) * 0.001, data);
         for(int i = 0; i < 8; i++)
         {
@@ -138,4 +217,16 @@ void Loop(void)
         TM1638_DisplayDigits(data);
     }
     TASK_END(WAVECTRL)
+}
+
+static uint32_t Int100Digits(uint32_t v100)
+{
+    if (v100 < 1000)       return 1;
+    if (v100 < 10000)      return 10;
+    if (v100 < 100000)     return 100;
+    if (v100 < 1000000)    return 1000;
+    if (v100 < 10000000)   return 10000;
+    if (v100 < 100000000)  return 100000;
+    if (v100 < 1000000000) return 1000000;
+    return 100000000;
 }
