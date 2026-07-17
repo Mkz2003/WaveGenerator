@@ -6,13 +6,7 @@
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
-/* Private typedef -----------------------------------------------------------*/
-typedef enum
-{
-    DAC_CH1 = 0,
-    DAC_CH2 = 1
-} DAC_Channel_t;
-
+/* Private typedef -----------------------------------------------------------*/;
 /* Private define ------------------------------------------------------------*/
 #define WaveGenerate_hdac hdac1
 #define WaveGenerate_htim1 htim6
@@ -20,6 +14,7 @@ typedef enum
 
 #define TABLE_SIZE      256
 #define MAX_WAVE_HZ     100000
+#define DAC_CHANNELS    2
 #define DAC_MAXVAL      4095
 #define DAC_MINVAL      0
 #define MAX_REFRESH_HZ  1000000
@@ -27,7 +22,7 @@ typedef enum
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
-static int16_t dac_buf[2][2][TABLE_SIZE];
+static int16_t dac_buf[DAC_CHANNELS][2][TABLE_SIZE];
 
 /* Private function prototypes -----------------------------------------------*/
 static float Vrms2Vp(float value, Wave_t wave);
@@ -53,15 +48,18 @@ void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2,
     if(dac_ch1.freq > MAX_WAVE_HZ || dac_ch2.freq > MAX_WAVE_HZ) return;
 
     static uint8_t bufferCtrl = 1;
-    Wave_t wave[2] = {dac_ch1.wave, dac_ch2.wave};
-    float freq[2] = {dac_ch1.freq, dac_ch2.freq};
-    float phase_deg[2] = {dac_ch1.phase_deg, dac_ch2.phase_deg};
-    float Vrms[2] = {dac_ch1.Vrms, dac_ch2.Vrms};
+
+    TIM_HandleTypeDef *htim[DAC_CHANNELS] = {&WaveGenerate_htim1, &WaveGenerate_htim2};
+    uint32_t dac_channel[DAC_CHANNELS] = {DAC_CHANNEL_1, DAC_CHANNEL_2};
+    Wave_t wave[DAC_CHANNELS] = {dac_ch1.wave, dac_ch2.wave};
+    float freq[DAC_CHANNELS] = {dac_ch1.freq, dac_ch2.freq};
+    float phase_deg[DAC_CHANNELS] = {dac_ch1.phase_deg, dac_ch2.phase_deg};
+    float Vrms[DAC_CHANNELS] = {dac_ch1.Vrms, dac_ch2.Vrms};
 
     // 若waveConfig使能，则切换缓冲区
     if(waveConfig != 0) bufferCtrl = 1 - bufferCtrl;
 
-    for(int ch = 0; ch < 2; ch++)
+    for(int ch = 0; ch < DAC_CHANNELS; ch++)
     {
         // 1. 计算点数 N 与刷新率 Fs
         uint32_t N = freq[ch] * TABLE_SIZE <= MAX_REFRESH_HZ ? TABLE_SIZE : MAX_REFRESH_HZ / freq[ch];
@@ -76,7 +74,6 @@ void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2,
         for(uint32_t i = 0; i < N; i++)
         {
             float src_index = ((i + offset) % N) * (float)M_TWOPI / N;    // [0, 2π)
-
 
             switch(wave[ch])
             {
@@ -125,21 +122,16 @@ void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2,
             }
             if (period > 65535) period = 65535;
 
-            // 4. 停止对应的定时器和 DAC DMA
-            TIM_HandleTypeDef *htim = (ch == DAC_CH1) ? &WaveGenerate_htim1 : &WaveGenerate_htim2;
-            uint32_t dac_channel = (ch == DAC_CH1) ? DAC_CHANNEL_1 : DAC_CHANNEL_2;
-
-            // HAL_TIM_Base_Stop(htim);
-            HAL_DAC_Stop_DMA(&WaveGenerate_hdac, dac_channel);
+            // 4. 停止对应的 DAC DMA
+            HAL_DAC_Stop_DMA(&WaveGenerate_hdac, dac_channel[ch]);
 
             // 5. 更新定时器参数
-            __HAL_TIM_SET_PRESCALER(htim, prescaler);
-            __HAL_TIM_SET_AUTORELOAD(htim, period);
+            __HAL_TIM_SET_PRESCALER(htim[ch], prescaler);
+            __HAL_TIM_SET_AUTORELOAD(htim[ch], period);
 
             // 6. 启动 DMA（循环模式），此时 DAC 已准备好等待触发
-            HAL_DAC_Start_DMA(&WaveGenerate_hdac, dac_channel, (uint32_t*)dac_buf[ch][bufferCtrl], N, DAC_ALIGN_12B_R);
+            HAL_DAC_Start_DMA(&WaveGenerate_hdac, dac_channel[ch], (uint32_t*)dac_buf[ch][bufferCtrl], N, DAC_ALIGN_12B_R);
         }
-
     }
 
     // 若waveConfig使能，则重启Trigger
@@ -147,10 +139,8 @@ void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2,
     {
         // 确保两个定时器都处于停止状态（DAC_ConfigChannel已经停止）
         // 同时写入，使两个Trigger在几乎同一时刻开始计数
-        __HAL_TIM_DISABLE(&WaveGenerate_htim1);
-        __HAL_TIM_DISABLE(&WaveGenerate_htim2);
-        __HAL_TIM_ENABLE(&WaveGenerate_htim1);
-        __HAL_TIM_ENABLE(&WaveGenerate_htim2);
+        for(int ch = 0; ch < DAC_CHANNELS; ch++) __HAL_TIM_DISABLE(htim[ch]);
+        for(int ch = 0; ch < DAC_CHANNELS; ch++) __HAL_TIM_ENABLE(htim[ch]);
     }
 }
 
