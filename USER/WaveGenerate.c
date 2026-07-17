@@ -46,13 +46,7 @@ extern TIM_HandleTypeDef WaveGenerate_htim2;
   * @retval     none
   * @note       使用这个函数配置DAC通道后，DAC配置立刻生效
   */
-/**
- * @brief 为DAC通道配置频率、有效值和相位
- * @param ch   通道选择 (DAC_CH1 / DAC_CH2)
- * @param freq 目标频率 (Hz), 0~100000
- * @param phase_deg 初始相位（度）
- */
-void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2, float Vdda)
+void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2, float Vdda, uint8_t waveConfig)
 {
 
     if(dac_ch1.freq > MAX_WAVE_HZ || dac_ch2.freq > MAX_WAVE_HZ) return;
@@ -63,8 +57,8 @@ void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2,
     float phase_deg[2] = {dac_ch1.phase_deg, dac_ch2.phase_deg};
     float Vrms[2] = {dac_ch1.Vrms, dac_ch2.Vrms};
 
-    // 切换缓冲区
-    bufferCtrl = 1 - bufferCtrl;
+    // 若waveConfig使能，则切换缓冲区
+    if(waveConfig != 0) bufferCtrl = 1 - bufferCtrl;
 
     for(int ch = 0; ch < 2; ch++)
     {
@@ -117,37 +111,46 @@ void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2,
             if(dac_buf[ch][bufferCtrl][i] < DAC_MINVAL) dac_buf[ch][bufferCtrl][i] = DAC_MINVAL;
         }
 
-        // 3. 计算对应定时器的 PSC 和 ARR
-        uint32_t prescaler = 0;
-        uint32_t period = (TIM_CLK / Fs) - 1;
-        while(period > 65535)
+        // 若waveConfig使能，则重新配置DAC和Trigger
+        if(waveConfig != 0)
         {
-            prescaler += 1;
-            period = (TIM_CLK / (Fs * (prescaler + 1))) - 1;
+            // 3. 计算对应定时器的 PSC 和 ARR
+            uint32_t prescaler = 0;
+            uint32_t period = (TIM_CLK / Fs) - 1;
+            while(period > 65535)
+            {
+                prescaler += 1;
+                period = (TIM_CLK / (Fs * (prescaler + 1))) - 1;
+            }
+            if (period > 65535) period = 65535;
+
+            // 4. 停止对应的定时器和 DAC DMA
+            TIM_HandleTypeDef *htim = (ch == DAC_CH1) ? &WaveGenerate_htim1 : &WaveGenerate_htim2;
+            uint32_t dac_channel = (ch == DAC_CH1) ? DAC_CHANNEL_1 : DAC_CHANNEL_2;
+
+            // HAL_TIM_Base_Stop(htim);
+            HAL_DAC_Stop_DMA(&WaveGenerate_hdac, dac_channel);
+
+            // 5. 更新定时器参数
+            __HAL_TIM_SET_PRESCALER(htim, prescaler);
+            __HAL_TIM_SET_AUTORELOAD(htim, period);
+
+            // 6. 启动 DMA（循环模式），此时 DAC 已准备好等待触发
+            HAL_DAC_Start_DMA(&WaveGenerate_hdac, dac_channel, (uint32_t*)dac_buf[ch][bufferCtrl], N, DAC_ALIGN_12B_R);
         }
-        if (period > 65535) period = 65535;
 
-        // 4. 停止对应的定时器和 DAC DMA
-        TIM_HandleTypeDef *htim = (ch == DAC_CH1) ? &WaveGenerate_htim1 : &WaveGenerate_htim2;
-        uint32_t dac_channel = (ch == DAC_CH1) ? DAC_CHANNEL_1 : DAC_CHANNEL_2;
-
-        // HAL_TIM_Base_Stop(htim);
-        HAL_DAC_Stop_DMA(&WaveGenerate_hdac, dac_channel);
-
-        // 5. 更新定时器参数
-        __HAL_TIM_SET_PRESCALER(htim, prescaler);
-        __HAL_TIM_SET_AUTORELOAD(htim, period);
-
-        // 6. 启动 DMA（循环模式），此时 DAC 已准备好等待触发
-        HAL_DAC_Start_DMA(&WaveGenerate_hdac, dac_channel, (uint32_t*)dac_buf[ch][bufferCtrl], N, DAC_ALIGN_12B_R);
     }
 
-    // 确保两个定时器都处于停止状态（DAC_ConfigChannel 已经停止）
-    // 同时写入 CEN 位，使 TIM6 和 TIM7 在几乎同一时刻开始计数
-    __HAL_TIM_DISABLE(&WaveGenerate_htim1);
-    __HAL_TIM_DISABLE(&WaveGenerate_htim2);
-    __HAL_TIM_ENABLE(&WaveGenerate_htim1);
-    __HAL_TIM_ENABLE(&WaveGenerate_htim2);
+    // 若waveConfig使能，则重启Trigger
+    if(waveConfig != 0)
+    {
+        // 确保两个定时器都处于停止状态（DAC_ConfigChannel已经停止）
+        // 同时写入，使两个Trigger在几乎同一时刻开始计数
+        __HAL_TIM_DISABLE(&WaveGenerate_htim1);
+        __HAL_TIM_DISABLE(&WaveGenerate_htim2);
+        __HAL_TIM_ENABLE(&WaveGenerate_htim1);
+        __HAL_TIM_ENABLE(&WaveGenerate_htim2);
+    }
 }
 
 static float Vrms2Vp(float value, Wave_t wave)

@@ -57,11 +57,10 @@ void Setup(void)
 
     RTCTimeInit();
 
-    DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, 1.0f, 0.0f};
-    DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, 1.0f, 0.0f};
+    DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
+    DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
 
-    DAC_ConfigChannel(dac_ch1, dac_ch2, 3.3f);
-
+    DAC_ConfigChannel(dac_ch1, dac_ch2, 3.3f, 1);
 
     HAL_ADCEx_Calibration_Start(&hadc1);
     HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&adcval, sizeof(adcval) / sizeof(uint16_t));
@@ -81,8 +80,6 @@ void Loop(void)
 
     TASK_START(ADCSAMPLING, 1)
     {
-
-
         float vrefint_cal_vref = (VREFINT_CAL_VREF / 1000.0);
         float temperature_cal1_temp = TEMPSENSOR_CAL1_TEMP;
         float temperature_cal2_temp = TEMPSENSOR_CAL2_TEMP;
@@ -127,10 +124,13 @@ void Loop(void)
         const uint32_t freq100Max = 10000000, freq100Min = 10;
         const uint32_t Vrms100Max = 100, Vrms100Min = 1;
 
+        // 从TM1638读按键
         uint32_t keyValue = TM1638_ReadKeys();
+
         uint8_t waveConfig = 0;
         static uint32_t VrmsSelectTick = 0x7FFFFFFF;
 
+        // 频率+
         if(TM1638_KeyStatus(3, 1) == KEY_CLICK || TM1638_KeyStatus(3, 1) == KEY_LONGPRESS)
         {
             freq100 += Int100Digits(freq100);
@@ -138,6 +138,8 @@ void Loop(void)
             waveConfig = 1;
             VrmsSelectTick -= VrmsRemainTime;   // 不让显示Vrms以显示Freq
         }
+
+        // 频率-
         if(TM1638_KeyStatus(3, 3) == KEY_CLICK || TM1638_KeyStatus(3, 3) == KEY_LONGPRESS)
         {
             freq100 -= Int100Digits(freq100 - Int100Digits(freq100));
@@ -145,6 +147,8 @@ void Loop(void)
             waveConfig = 1;
             VrmsSelectTick -= VrmsRemainTime;   // 不让显示Vrms以显示Freq
         }
+
+        // 电压+
         if(TM1638_KeyStatus(3, 5) == KEY_CLICK || TM1638_KeyStatus(3, 5) == KEY_LONGPRESS)
         {
             Vrms100 += Int100Digits(Vrms100);
@@ -152,6 +156,8 @@ void Loop(void)
             waveConfig = 1;
             VrmsSelectTick = HAL_GetTick();
         }
+
+        // 电压-
         if(TM1638_KeyStatus(3, 7) == KEY_CLICK || TM1638_KeyStatus(3, 7) == KEY_LONGPRESS)
         {
             Vrms100 -= Int100Digits(Vrms100 - Int100Digits(Vrms100));
@@ -160,6 +166,7 @@ void Loop(void)
             VrmsSelectTick = HAL_GetTick();
         }
 
+        // 波形切换
         static uint8_t waveSelect_entryFlag = 1;    // 令按键单击和长按只触发一次事件
         if(TM1638_KeyStatus(3, 2) == KEY_CLICK || TM1638_KeyStatus(3, 2) == KEY_LONGPRESS)
         {
@@ -199,13 +206,16 @@ void Loop(void)
             waveSelect_entryFlag = 1;
         }
 
-        if(waveConfig != 0)
+        // 启动DAC配置
+        if(waveConfig != 0 || 1)    // 使能DAC的幅值动态调整
         {
             DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
             DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-            DAC_ConfigChannel(dac_ch1, dac_ch2, Vdda);
+            DAC_ConfigChannel(dac_ch1, dac_ch2, Vdda, waveConfig);
         }
-        
+
+    
+        // TM1638的数码管&LED配置
         uint8_t data[16] = {0};
 
         FloatToSegments((HAL_GetTick() - VrmsSelectTick < VrmsRemainTime ? Vrms100 : freq100) / 100.0f, data);
@@ -228,5 +238,5 @@ static uint32_t Int100Digits(uint32_t v100)
     if (v100 < 10000000)   return 10000;
     if (v100 < 100000000)  return 100000;
     if (v100 < 1000000000) return 1000000;
-    return 100000000;
+    return 1000000;
 }
