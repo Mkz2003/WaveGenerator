@@ -43,6 +43,7 @@ extern TIM_HandleTypeDef WaveGenerate_htim2;
   * @param[in]  dac_ch1    DAC通道1
   * @param[in]  dac_ch2 DAC通道2
   * @param[in]  Vdda    当前DAC的参考电平（代表DAC_MAXVAL对应的实际电压值）
+  * @param[in]  waveConfig    配置当前波形参数是否改变，用于波形切换（1）或者幅值动态调整（0）
   * @retval     none
   * @note       使用这个函数配置DAC通道后，DAC配置立刻生效
   */
