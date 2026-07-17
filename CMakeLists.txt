@@ -79,3 +79,25 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
 # target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
 #     -u _printf_float
 # )
+
+# 1. 列出所有需要强制编译的源文件（相对于项目根目录）
+set(FORCE_COMPILE_SOURCES
+    # 可继续添加更多文件
+    ${CMAKE_CURRENT_LIST_DIR}/USER/Date.c
+    
+)
+
+# 2. 生成所有 touch 命令
+set(TOUCH_COMMANDS "")
+foreach(src ${FORCE_COMPILE_SOURCES})
+    list(APPEND TOUCH_COMMANDS COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${src})
+endforeach()
+
+# 3. 创建自定义目标，执行所有 touch 命令
+add_custom_target(ForceCompileSources
+    ${TOUCH_COMMANDS}
+    COMMENT "Forcing recompilation of specified source files"
+)
+
+# 4. 将自定义目标添加为主目标的依赖
+add_dependencies(${CMAKE_PROJECT_NAME} ForceCompileSources)
