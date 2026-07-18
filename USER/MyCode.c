@@ -96,28 +96,6 @@ void Loop(void)
     }
     TASK_END(ADCSAMPLING)
 
-    TASK_START(LED, 1000)
-    {
-        HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-        HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
-        const uint8_t fractional_precision = 4;
-        const float pow10fp = powf(10.0f, fractional_precision);
-        int Vdda_t1 = truncf(Vdda), Vdda_t100 = truncf(Vdda * pow10fp) - Vdda_t1 * pow10fp;
-        int Vbat_t1 = truncf(Vbat), Vbat_t100 = truncf(Vbat * pow10fp) - Vbat_t1 * pow10fp;
-        int Temp_t1 = truncf(Temp), Temp_t100 = truncf(Temp * pow10fp) - Temp_t1 * pow10fp;
-
-        printf("%2d-%2d-%2d %2d:%02d:%02d.%03ld\n"
-                "Vdda: %d.%0*d, Vbat: %d.%0*d, Temp: %d.%0*d\n"
-                "\n",
-                sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1),
-                Vdda_t1, fractional_precision, Vdda_t100, Vbat_t1, fractional_precision, Vbat_t100, Temp_t1, fractional_precision, Temp_t100
-                );
-        // HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-
-    }
-    TASK_END(LED)
-
     TASK_START(WAVECTRL, 20)
     {
 
@@ -227,6 +205,39 @@ void Loop(void)
         TM1638_DisplayDigits(data);
     }
     TASK_END(WAVECTRL)
+
+    TASK_START(LED, 30)
+    {
+        HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+        HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+        const uint8_t fractional_precision = 4;
+        const float pow10fp = powf(10.0f, fractional_precision);
+        int Vdda_t1 = truncf(Vdda), Vdda_t100 = truncf(Vdda * pow10fp) - Vdda_t1 * pow10fp;
+        int Vbat_t1 = truncf(Vbat), Vbat_t100 = truncf(Vbat * pow10fp) - Vbat_t1 * pow10fp;
+        int Temp_t1 = truncf(Temp), Temp_t100 = truncf(Temp * pow10fp) - Temp_t1 * pow10fp;
+
+        char* dac_ch1_wave;
+        switch(wave1)
+        {
+            case SINE: dac_ch1_wave = "SINE"; break;
+            case TRIANGLE: dac_ch1_wave = "TRIANGLE"; break;
+            case SQUARE: dac_ch1_wave = "SQUARE"; break;
+            case SAWTOOTH: dac_ch1_wave = "SAWTOOTH"; break;
+            case DC: dac_ch1_wave = "DC"; break;
+        }
+
+        printf("\033[2J\033[1H\n");
+        printf("%2d-%2d-%2d %2d:%02d:%02d.%03ld\n", sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1));
+        printf("Vdda: %d.%0*d, Vbat: %d.%0*d, Temp: %d.%0*d\n", Vdda_t1, fractional_precision, Vdda_t100, Vbat_t1, fractional_precision, Vbat_t100, Temp_t1, fractional_precision, Temp_t100);
+        printf("dac_ch1: wave: %s, freq: %d.%02d, Vrms: %d.%02d\n", dac_ch1_wave, freq100 / 100, freq100 % 100, Vrms100 / 100, Vrms100 % 100);
+        printf("\n");
+
+        // HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
+
+    }
+    TASK_END(LED)
+    __WFE();
 }
 
 static uint32_t Int100Digits(uint32_t v100)
