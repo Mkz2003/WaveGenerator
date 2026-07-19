@@ -100,7 +100,7 @@ void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2,
                 case DC:
                 default:
                 {
-                    dac_buf[ch][bufferCtrl][i] = (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
+                    dac_buf[ch][bufferCtrl][i] = (DAC_MAXVAL / 2.0f);
                     break;                    
                 }
             }

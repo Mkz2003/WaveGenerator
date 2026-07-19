@@ -192,7 +192,6 @@ void Loop(void)
             DAC_ConfigChannel(dac_ch1, dac_ch2, Vdda, waveConfig);
         }
 
-    
         // TM1638的数码管&LED配置
         uint8_t data[16] = {0};
 
