@@ -76,9 +76,9 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     ${CMAKE_CURRENT_LIST_DIR}/Drivers/CMSIS/DSP/Lib/GCC/libarm_cortexM0l_math.a
 )
 
-# target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
-#     -u _printf_float
-# )
+target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
+    # -u _printf_float
+)
 
 # 1. 列出所有需要强制编译的源文件（相对于项目根目录）
 set(FORCE_COMPILE_SOURCES

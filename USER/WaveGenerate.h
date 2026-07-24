@@ -16,23 +16,26 @@ typedef enum
     SQUARE,
     TRIANGLE,
     SAWTOOTH
-} Wave_t;
+} WaveForm_t;
 
 /**
   * @brief  波形参数定义
   */
 typedef struct
 {
-  Wave_t wave;
+  WaveForm_t waveForm;
   float freq;
   float Vrms;
   float phase_deg;
-} DAC_ChannalConfig_t;
+} Wave_t;
 
 /* Exported constants --------------------------------------------------------*/
 /* Exported macro ------------------------------------------------------------*/
 /* Exported functions prototypes ---------------------------------------------*/
-void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2, float Vdda, uint8_t waveConfig);
+void Set_Wave(const Wave_t* const wave, float Vdda, uint8_t waveConfig);
+
+void DAC_ConvHalfCpltCallbackCh1(void);
+void DAC_ConvCpltCallbackCh1(void);
 
 /* Private defines -----------------------------------------------------------*/
 

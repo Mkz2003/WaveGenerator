@@ -1,31 +1,40 @@
 /* Includes ------------------------------------------------------------------*/
 #include "WaveGenerate.h"
 
+#include <arm_math.h>
 #include <math.h>
 
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
-/* Private typedef -----------------------------------------------------------*/;
+/* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 #define WaveGenerate_hdac hdac1
 #define WaveGenerate_htim1 htim6
-#define WaveGenerate_htim2 htim7
+#define WaveGenerate_htim2 htim6
 
-#define TABLE_SIZE      256
 #define MAX_WAVE_HZ     100000
+#define MIN_WAVE_HZ     0.1
 #define DAC_CHANNELS    2
 #define DAC_MAXVAL      4095
 #define DAC_MINVAL      0
 #define MAX_REFRESH_HZ  1000000
-#define TIM_CLK         64000000
+#define TABLE_SIZE2     8
+#define TABLE_SIZE      (1 << (TABLE_SIZE2))
+#define HALF_BUF        256                     // 半缓冲大小，可根据实时性调整
+#define FULL_BUF        ((HALF_BUF) * 2)
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
-static int16_t dac_buf[DAC_CHANNELS][2][TABLE_SIZE];
+static uint16_t table[TABLE_SIZE]; // 查表
+static uint16_t dac_buf[FULL_BUF]; // dac输出表
+static uint32_t phase_acc  = 0;
+static uint32_t phase_step = 0;
 
 /* Private function prototypes -----------------------------------------------*/
-static float Vrms2Vp(float value, Wave_t wave);
+__attribute__((always_inline)) static inline uint16_t dac_value_from_phase(uint32_t phase);
+static void init_table(const Wave_t* const wave, float Vdda);
+static float Vrms2Vp(const Wave_t* const wave);
 
 /* Exported Constants --------------------------------------------------------*/
 extern DAC_HandleTypeDef WaveGenerate_hdac;
@@ -34,119 +43,132 @@ extern TIM_HandleTypeDef WaveGenerate_htim2;
 
 /* Exported functions --------------------------------------------------------*/
 /**
-  * @brief      为DAC通道配置频率、有效值和相位
-  * @param[in]  dac_ch1    DAC通道1
-  * @param[in]  dac_ch2 DAC通道2
-  * @param[in]  Vdda    当前DAC的参考电平（代表DAC_MAXVAL对应的实际电压值）
-  * @param[in]  waveConfig    配置当前波形参数是否改变，用于波形切换（1）或者幅值动态调整（0）
+  * @brief      配置DAC输出波形
+  * @param[in]  wave        波形参数
+  * @param[in]  Vdda        参考电平
+  * @param[in]  waveConfig  波形刷新或初始化
   * @retval     none
-  * @note       使用这个函数配置DAC通道后，DAC配置立刻生效
   */
-void DAC_ConfigChannel(DAC_ChannalConfig_t dac_ch1, DAC_ChannalConfig_t dac_ch2, float Vdda, uint8_t waveConfig)
+void Set_Wave(const Wave_t* const wave, float Vdda, uint8_t waveConfig)
 {
-
-    if(dac_ch1.freq > MAX_WAVE_HZ || dac_ch2.freq > MAX_WAVE_HZ) return;
-
-    static uint8_t bufferCtrl = 1;
-
-    TIM_HandleTypeDef *htim[DAC_CHANNELS] = {&WaveGenerate_htim1, &WaveGenerate_htim2};
-    uint32_t dac_channel[DAC_CHANNELS] = {DAC_CHANNEL_1, DAC_CHANNEL_2};
-    Wave_t wave[DAC_CHANNELS] = {dac_ch1.wave, dac_ch2.wave};
-    float freq[DAC_CHANNELS] = {dac_ch1.freq, dac_ch2.freq};
-    float phase_deg[DAC_CHANNELS] = {dac_ch1.phase_deg, dac_ch2.phase_deg};
-    float Vrms[DAC_CHANNELS] = {dac_ch1.Vrms, dac_ch2.Vrms};
-
-    // 若waveConfig使能，则切换缓冲区
-    if(waveConfig != 0) bufferCtrl = 1 - bufferCtrl;
-
-    for(int ch = 0; ch < DAC_CHANNELS; ch++)
+    if(wave->freq >= MIN_WAVE_HZ && wave->freq <= MAX_WAVE_HZ)
     {
-        // 1. 计算点数 N 与刷新率 Fs
-        uint32_t N = freq[ch] * TABLE_SIZE <= MAX_REFRESH_HZ ? TABLE_SIZE : MAX_REFRESH_HZ / freq[ch];
-        uint32_t Fs = (uint32_t)(freq[ch] * N);
-
-        // 2. 生成带相位偏移的缓冲区
-        uint32_t offset = (uint32_t)(phase_deg[ch] / 360.0f * N + 0.5f) % N;  // 四舍五入循环偏移量
-        
-        // 生成系数
-        float coef = Vrms2Vp(Vrms[ch], wave[ch]) / (Vdda / 2.0f);
-
-        for(uint32_t i = 0; i < N; i++)
+        init_table(wave, Vdda);
+        if(waveConfig)
         {
-            float src_index = ((i + offset) % N) * (float)M_TWOPI / N;    // [0, 2π)
-
-            switch(wave[ch])
-            {
-                case SINE:
-                {
-                    dac_buf[ch][bufferCtrl][i] = (sinf(src_index) * (coef * DAC_MAXVAL / 2.0f)) + (DAC_MAXVAL / 2.0f);
-                    break;
-                }
-                case SQUARE:
-                {
-                    dac_buf[ch][bufferCtrl][i] = (src_index < (float)M_PI ? 1.0f : -1.0f) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
-                    break;
-                }
-                case TRIANGLE:
-                {
-                    dac_buf[ch][bufferCtrl][i] = (float)M_2_PI * asinf(sinf(src_index)) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
-                    break;
-                }
-                case SAWTOOTH:
-                {
-                    dac_buf[ch][bufferCtrl][i] = (src_index / (float)M_PI - 1.0f) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
-                    break;
-                }
-                case DC:
-                default:
-                {
-                    dac_buf[ch][bufferCtrl][i] = (DAC_MAXVAL / 2.0f);
-                    break;                    
-                }
-            }
-
-            if(dac_buf[ch][bufferCtrl][i] > DAC_MAXVAL) dac_buf[ch][bufferCtrl][i] = DAC_MAXVAL;
-            if(dac_buf[ch][bufferCtrl][i] < DAC_MINVAL) dac_buf[ch][bufferCtrl][i] = DAC_MINVAL;
+            HAL_TIM_Base_Stop(&WaveGenerate_htim1);
+            phase_step = (uint32_t)(wave->freq * (float)(uint32_t)(-1) / 1000000.0f);
+            HAL_DAC_Start_DMA(&WaveGenerate_hdac, DAC_CHANNEL_1, (uint32_t*)dac_buf, FULL_BUF, DAC_ALIGN_12B_R);
+            HAL_TIM_Base_Start(&WaveGenerate_htim1);
         }
-
-        // 若waveConfig使能，则重新配置DAC和Trigger
-        if(waveConfig != 0)
-        {
-            // 3. 计算对应定时器的 PSC 和 ARR
-            uint32_t prescaler = 0;
-            uint32_t period = (TIM_CLK / Fs) - 1;
-            while(period > 65535)
-            {
-                prescaler += 1;
-                period = (TIM_CLK / (Fs * (prescaler + 1))) - 1;
-            }
-            if (period > 65535) period = 65535;
-
-            // 4. 停止对应的 DAC DMA
-            HAL_DAC_Stop_DMA(&WaveGenerate_hdac, dac_channel[ch]);
-
-            // 5. 更新定时器参数
-            __HAL_TIM_SET_PRESCALER(htim[ch], prescaler);
-            __HAL_TIM_SET_AUTORELOAD(htim[ch], period);
-
-            // 6. 启动 DMA（循环模式），此时 DAC 已准备好等待触发
-            HAL_DAC_Start_DMA(&WaveGenerate_hdac, dac_channel[ch], (uint32_t*)dac_buf[ch][bufferCtrl], N, DAC_ALIGN_12B_R);
-        }
-    }
-
-    // 若waveConfig使能，则重启Trigger
-    if(waveConfig != 0)
-    {
-        // 确保两个定时器都处于停止状态（DAC_ConfigChannel已经停止）
-        // 同时写入，使两个Trigger在几乎同一时刻开始计数
-        for(int ch = 0; ch < DAC_CHANNELS; ch++) __HAL_TIM_DISABLE(htim[ch]);
-        for(int ch = 0; ch < DAC_CHANNELS; ch++) __HAL_TIM_ENABLE(htim[ch]);
     }
 }
 
-static float Vrms2Vp(float value, Wave_t wave)
+/**
+  * @brief      DAC半传输完成回调函数
+  * @retval     none
+  * @note       更新dac_buf前半区的值
+  */
+void DAC_ConvHalfCpltCallbackCh1(void)
 {
-    switch(wave)
+    uint32_t pacc = phase_acc;
+    uint32_t pstep = phase_step;
+    for(int i = 0; i < HALF_BUF; i++)
+    {
+        pacc += pstep;
+        dac_buf[i] = dac_value_from_phase(pacc);
+    }
+    phase_acc = pacc;
+}
+
+/**
+  * @brief      DAC传输完成回调函数
+  * @retval     none
+  * @note       更新dac_buf后半区的值
+  */
+void DAC_ConvCpltCallbackCh1(void)
+{
+    uint32_t pacc = phase_acc;
+    uint32_t pstep = phase_step;
+    for(int i = HALF_BUF; i < FULL_BUF; i++)
+    {
+        pacc += pstep;
+        dac_buf[i] = dac_value_from_phase(pacc);
+    }
+    phase_acc = pacc;
+}
+
+/**
+  * @brief      按phase从table取DAC数值
+  * @param[in]  phase   相位，[0, 2^32-1)映射到[0, 2π)
+  * @retval     查表得到的DAC数值
+  */
+__attribute__((always_inline)) static inline uint16_t dac_value_from_phase(uint32_t phase)
+{
+    return table[phase >> (32 - TABLE_SIZE2)];
+}
+
+/**
+  * @brief      按波形形状和有效值初始化table，用于取DAC数值
+  * @param[in]  wave    波形参数
+  * @param[in]  Vdda    参考电平
+  * @retval     none
+  */
+static void init_table(const Wave_t* const wave, float Vdda)
+{
+    // 生成系数
+    float coef = Vrms2Vp(wave) / (Vdda / 2.0f);
+
+    for (int i = 0; i < TABLE_SIZE; i++)
+    {
+        float rad = (float)M_TWOPI * i / TABLE_SIZE;
+        int16_t value;
+        switch(wave->waveForm)
+        {
+            case SINE:
+            {
+                value = (sinf(rad) * (coef * DAC_MAXVAL / 2.0f)) + (DAC_MAXVAL / 2.0f);
+                break;
+            }
+            case SQUARE:
+            {
+                value = (rad < (float)M_PI ? 1.0f : -1.0f) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
+                break;
+            }
+            case TRIANGLE:
+            {
+                value = (float)M_2_PI * asinf(sinf(rad)) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
+                break;
+            }
+            case SAWTOOTH:
+            {
+                value = (rad / (float)M_PI - 1.0f) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
+                break;
+            }
+            case DC:
+            default:
+            {
+                value = (DAC_MAXVAL / 2.0f);
+                break;                    
+            }
+        }
+
+        if(value > DAC_MAXVAL) value = DAC_MAXVAL;
+        if(value < DAC_MINVAL) value = DAC_MINVAL;
+
+        table[i] = (uint16_t)value;
+    }
+}
+
+/**
+  * @brief      转换波形有效值为峰值
+  * @param[in]  wave    波形参数
+  * @retval     波形峰值
+  */
+static float Vrms2Vp(const Wave_t* const wave)
+{
+    float value = wave->Vrms;
+    switch(wave->waveForm)
     {
         case SINE:
         {

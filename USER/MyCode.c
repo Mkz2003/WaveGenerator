@@ -2,7 +2,7 @@
 #include "MyCode.h"
 
 #include <ctype.h>
-#include <math.h>
+#include <arm_math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -34,9 +34,10 @@ uint8_t buf[1024];
 
 uint32_t freq100 = 1000 * 100;
 uint32_t Vrms100 = 1 * 100;
-Wave_t wave1 = SINE, wave2 = DC;
+WaveForm_t waveForm1 = SINE;
 
 volatile struct {volatile uint16_t Temp, Vref, Vbat;} adcval = {0};
+float Vdda = 0.0f, Vbat = 0.0f, Temp = 0.0f;
 
 /* Private function prototypes -----------------------------------------------*/
 static uint32_t Int100Digits(uint32_t v100);
@@ -45,6 +46,8 @@ static uint32_t Int100Digits(uint32_t v100);
 extern RTC_HandleTypeDef hrtc;
 extern UART_HandleTypeDef huart2;
 extern ADC_HandleTypeDef hadc1;
+extern DAC_HandleTypeDef hdac1;
+extern TIM_HandleTypeDef htim6;
 
 /* Exported functions --------------------------------------------------------*/
 /**
@@ -57,10 +60,8 @@ void Setup(void)
 
     RTCTimeInit();
 
-    DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-    DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-
-    DAC_ConfigChannel(dac_ch1, dac_ch2, 3.3f, 1);
+    Wave_t wave1 = {waveForm1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
+    Set_Wave(&wave1, 3.3f, 1);
 
     HAL_ADCEx_Calibration_Start(&hadc1);
     HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&adcval, sizeof(adcval) / sizeof(uint16_t));
@@ -72,7 +73,6 @@ void Setup(void)
   */
 void Loop(void)
 {
-    static float Vdda = 0.0f, Vbat = 0.0f, Temp = 0.0f; 
     static RTC_DateTypeDef sDate;
     static RTC_TimeTypeDef sTime;
 
@@ -150,28 +150,28 @@ void Loop(void)
         {
             if(waveSelect_entryFlag != 0)
             {
-                Wave_t* wave = &wave1;
-                switch(*wave)
+                WaveForm_t* waveForm = &waveForm1;
+                switch(*waveForm)
                 {
                     case SINE:
                     {
-                        *wave = TRIANGLE;
+                        *waveForm = TRIANGLE;
                         break;
                     }
                     case TRIANGLE:
                     {
-                        *wave = SQUARE;
+                        *waveForm = SQUARE;
                         break;
                     }
                     case SQUARE:
                     {
-                        *wave = SAWTOOTH;
+                        *waveForm = SAWTOOTH;
                         break;
                     }
                     case SAWTOOTH:
                     default:
                     {
-                        *wave = SINE;
+                        *waveForm = SINE;
                         break;
                     }
                 }
@@ -187,9 +187,8 @@ void Loop(void)
         // 启动DAC配置
         if(waveConfig != 0 || 1)    // 使能DAC的幅值动态调整
         {
-            DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-            DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-            DAC_ConfigChannel(dac_ch1, dac_ch2, Vdda, waveConfig);
+            Wave_t wave1 = {waveForm1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
+            Set_Wave(&wave1, Vdda, waveConfig);
         }
 
         // TM1638的数码管&LED配置
@@ -205,7 +204,7 @@ void Loop(void)
     }
     TASK_END(WAVECTRL)
 
-    TASK_START(LED, 30)
+    TASK_START(LED, 1000)
     {
         HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
         HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
@@ -217,7 +216,7 @@ void Loop(void)
         int Temp_t1 = truncf(Temp), Temp_t100 = truncf(Temp * pow10fp) - Temp_t1 * pow10fp;
 
         char* dac_ch1_wave;
-        switch(wave1)
+        switch(waveForm1)
         {
             case SINE: dac_ch1_wave = "SINE"; break;
             case TRIANGLE: dac_ch1_wave = "TRIANGLE"; break;
@@ -239,6 +238,44 @@ void Loop(void)
     __WFE();
 }
 
+/**
+  * @brief      串口发送完成回调函数
+  * @retval     none
+  * @note       重启串口接收
+  */
+void UART_TxCpltCallback(void)
+{
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
+}
+
+/**
+  * @brief      串口接收空闲回调函数
+  * @param[in]  Size    接收字节数
+  * @retval     none
+  * @note       回显接收数据
+  */
+void UART_RxEventCallback(uint16_t Size)
+{
+    buf[Size] = '\n';
+    HAL_UART_Transmit_DMA(&huart2, buf, Size);
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
+}
+
+/**
+  * @brief      串口错误回调函数
+  * @retval     none
+  * @note       重启串口接收
+  */
+void UART_ErrorCallback(void)
+{
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
+}
+
+/**
+  * @brief      对于无符号整数，返回它的数量级
+  * @param[in]  v100    无符号整数（放大到100倍）
+  * @retval     数量级
+  */
 static uint32_t Int100Digits(uint32_t v100)
 {
     if (v100 < 1000)       return 1;
