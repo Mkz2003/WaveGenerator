@@ -12,10 +12,6 @@
 void Setup(void);
 void Loop(void);
 
-void UART_TxCpltCallback(void);
-void UART_RxEventCallback(uint16_t Size);
-void UART_ErrorCallback(void);
-
 /* Private defines -----------------------------------------------------------*/
 
 #endif /* __MYCODE_H */

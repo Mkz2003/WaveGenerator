@@ -23,7 +23,6 @@
 #include "dma.h"
 #include "spi.h"
 #include "tim.h"
-#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -98,7 +97,6 @@ int main(void)
   MX_DAC1_Init();
   MX_SPI1_Init();
   MX_TIM6_Init();
-  MX_USART2_UART_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 

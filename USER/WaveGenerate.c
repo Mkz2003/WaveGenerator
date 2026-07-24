@@ -167,7 +167,7 @@ static void init_table(const Wave_t* const wave, float Vdda)
   */
 static float Vrms2Vp(const Wave_t* const wave)
 {
-    float value = wave->Vrms;
+    float value = wave->Vrms / 4.0f;
     switch(wave->waveForm)
     {
         case SINE:
