@@ -2,20 +2,23 @@
 #include "MyCode.h"
 
 #include <ctype.h>
-#include <math.h>
+#include <arm_math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "main.h"
+#include "stm32_hal_legacy.h"
+#include "stm32f0xx_hal_tim.h"
+#include "stm32f0xx_ll_adc.h"
 
 /* Private includes ----------------------------------------------------------*/
-#include "Date.h"
 #include "WaveGenerate.h"
 #include "TM1638.h"
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
 const uint32_t VrmsRemainTime = 2000;
+const float Vout2 = 3.0f;
 
 /* Private macro -------------------------------------------------------------*/
 #define TASK_INIT() typeof(HAL_GetTick()) __task_tick;
@@ -34,17 +37,19 @@ uint8_t buf[1024];
 
 uint32_t freq100 = 1000 * 100;
 uint32_t Vrms100 = 1 * 100;
-Wave_t wave1 = SINE, wave2 = DC;
+WaveForm_t waveForm1 = SINE;
 
 volatile struct {volatile uint16_t Temp, Vref, Vbat;} adcval = {0};
+float Vdda = 0.0f, Vbat = 0.0f, Temp = 0.0f;
 
 /* Private function prototypes -----------------------------------------------*/
 static uint32_t Int100Digits(uint32_t v100);
 
 /* Exported Constants --------------------------------------------------------*/
-extern RTC_HandleTypeDef hrtc;
 extern UART_HandleTypeDef huart2;
-extern ADC_HandleTypeDef hadc1;
+extern ADC_HandleTypeDef hadc;
+extern DAC_HandleTypeDef hdac1;
+extern TIM_HandleTypeDef htim2;
 
 /* Exported functions --------------------------------------------------------*/
 /**
@@ -55,15 +60,14 @@ void Setup(void)
 {
     HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
 
-    RTCTimeInit();
+    HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+    
+    Wave_t wave1 = {waveForm1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
+    Set_Wave(&wave1, 3.3f, 1);
 
-    DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-    DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-
-    DAC_ConfigChannel(dac_ch1, dac_ch2, 3.3f, 1);
-
-    HAL_ADCEx_Calibration_Start(&hadc1);
-    HAL_ADC_Start_DMA(&hadc1, (uint32_t*)&adcval, sizeof(adcval) / sizeof(uint16_t));
+    HAL_ADCEx_Calibration_Start(&hadc);
+    HAL_ADC_Start_DMA(&hadc, (uint32_t*)&adcval, sizeof(adcval) / sizeof(uint16_t));
+    
 }
 
 /**
@@ -72,9 +76,6 @@ void Setup(void)
   */
 void Loop(void)
 {
-    static float Vdda = 0.0f, Vbat = 0.0f, Temp = 0.0f; 
-    static RTC_DateTypeDef sDate;
-    static RTC_TimeTypeDef sTime;
 
     TASK_INIT()
 
@@ -83,16 +84,20 @@ void Loop(void)
         float vrefint_cal_vref = (VREFINT_CAL_VREF / 1000.0);
         float temperature_cal1_temp = TEMPSENSOR_CAL1_TEMP;
         float temperature_cal2_temp = TEMPSENSOR_CAL2_TEMP;
-        float vrefint_cal_addr = (*VREFINT_CAL_ADDR) << 4;
-        float tempsensor_cal1_addr = (*TEMPSENSOR_CAL1_ADDR) << 4;
-        float tempsensor_cal2_addr = (*TEMPSENSOR_CAL2_ADDR) << 4;
-        Vdda = vrefint_cal_vref * vrefint_cal_addr / adcval.Vref;
-        Vbat = adcval.Vbat * Vdda / (float)(1 << 16) * 3.0;
-        // Temp = t1 + ((ADC) - adc1) * (t2 - t1) / (adc2 - adc1)
-        Temp = temperature_cal1_temp
-                    + (adcval.Temp / vrefint_cal_vref * Vdda - tempsensor_cal1_addr)
-                        * (temperature_cal2_temp - temperature_cal1_temp)
-                        / (tempsensor_cal2_addr - tempsensor_cal1_addr);
+        float vrefint_cal_addr = (*VREFINT_CAL_ADDR);
+        float tempsensor_cal1_addr = (*TEMPSENSOR_CAL1_ADDR);
+        float tempsensor_cal2_addr = (*TEMPSENSOR_CAL2_ADDR);
+        if(adcval.Vref > vrefint_cal_addr)
+        {
+            Vdda = vrefint_cal_vref * vrefint_cal_addr / adcval.Vref;
+            Vbat = adcval.Vbat * Vdda / (float)(1 << 12) * 2.0f;
+            // Temp = t1 + ((ADC) - adc1) * (t2 - t1) / (adc2 - adc1)
+            Temp = temperature_cal1_temp
+                        + (adcval.Temp / vrefint_cal_vref * Vdda - tempsensor_cal1_addr)
+                            * (temperature_cal2_temp - temperature_cal1_temp)
+                            / (tempsensor_cal2_addr - tempsensor_cal1_addr);           
+        }
+
     }
     TASK_END(ADCSAMPLING)
 
@@ -103,13 +108,13 @@ void Loop(void)
         const uint32_t Vrms100Max = 100, Vrms100Min = 1;
 
         // 从TM1638读按键
-        uint32_t keyValue = TM1638_ReadKeys();
+        volatile uint32_t keyValue = TM1638_ReadKeys();
 
         uint8_t waveConfig = 0;
         static uint32_t VrmsSelectTick = 0x7FFFFFFF;
 
         // 频率+
-        if(TM1638_KeyStatus(3, 1) == KEY_CLICK || TM1638_KeyStatus(3, 1) == KEY_LONGPRESS)
+        if((TM1638_KeyStatus(1, 1) == KEY_CLICK) | (TM1638_KeyStatus(1, 1) == KEY_LONGPRESS))
         {
             freq100 += Int100Digits(freq100);
             if(freq100 > freq100Max) freq100 = freq100Max;
@@ -118,7 +123,7 @@ void Loop(void)
         }
 
         // 频率-
-        if(TM1638_KeyStatus(3, 3) == KEY_CLICK || TM1638_KeyStatus(3, 3) == KEY_LONGPRESS)
+        if((TM1638_KeyStatus(1, 2) == KEY_CLICK) | (TM1638_KeyStatus(1, 2) == KEY_LONGPRESS))
         {
             freq100 -= Int100Digits(freq100 - Int100Digits(freq100));
             if(freq100 < freq100Min) freq100 = freq100Min;
@@ -127,7 +132,7 @@ void Loop(void)
         }
 
         // 电压+
-        if(TM1638_KeyStatus(3, 5) == KEY_CLICK || TM1638_KeyStatus(3, 5) == KEY_LONGPRESS)
+        if((TM1638_KeyStatus(1, 3) == KEY_CLICK) | (TM1638_KeyStatus(1, 3) == KEY_LONGPRESS))
         {
             Vrms100 += Int100Digits(Vrms100);
             if(Vrms100 > Vrms100Max) Vrms100 = Vrms100Max;
@@ -136,7 +141,7 @@ void Loop(void)
         }
 
         // 电压-
-        if(TM1638_KeyStatus(3, 7) == KEY_CLICK || TM1638_KeyStatus(3, 7) == KEY_LONGPRESS)
+        if((TM1638_KeyStatus(1, 4) == KEY_CLICK) | (TM1638_KeyStatus(1, 4) == KEY_LONGPRESS))
         {
             Vrms100 -= Int100Digits(Vrms100 - Int100Digits(Vrms100));
             if(Vrms100 < Vrms100Min) Vrms100 = Vrms100Min;
@@ -146,32 +151,32 @@ void Loop(void)
 
         // 波形切换
         static uint8_t waveSelect_entryFlag = 1;    // 令按键单击和长按只触发一次事件
-        if(TM1638_KeyStatus(3, 2) == KEY_CLICK || TM1638_KeyStatus(3, 2) == KEY_LONGPRESS)
+        if((TM1638_KeyStatus(2, 1) == KEY_CLICK) | (TM1638_KeyStatus(2, 1) == KEY_LONGPRESS))
         {
             if(waveSelect_entryFlag != 0)
             {
-                Wave_t* wave = &wave1;
-                switch(*wave)
+                WaveForm_t* waveForm = &waveForm1;
+                switch(*waveForm)
                 {
                     case SINE:
                     {
-                        *wave = TRIANGLE;
+                        *waveForm = TRIANGLE;
                         break;
                     }
                     case TRIANGLE:
                     {
-                        *wave = SQUARE;
+                        *waveForm = SQUARE;
                         break;
                     }
                     case SQUARE:
                     {
-                        *wave = SAWTOOTH;
+                        *waveForm = SAWTOOTH;
                         break;
                     }
                     case SAWTOOTH:
                     default:
                     {
-                        *wave = SINE;
+                        *waveForm = SINE;
                         break;
                     }
                 }
@@ -183,32 +188,59 @@ void Loop(void)
         {
             waveSelect_entryFlag = 1;
         }
-
         // 启动DAC配置
         if(waveConfig != 0 || 1)    // 使能DAC的幅值动态调整
         {
-            DAC_ChannalConfig_t dac_ch1 = {wave1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-            DAC_ChannalConfig_t dac_ch2 = {wave2, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-            DAC_ConfigChannel(dac_ch1, dac_ch2, Vdda, waveConfig);
+            Wave_t wave1 = {waveForm1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
+            Set_Wave(&wave1, Vdda, waveConfig);
+            uint32_t arr = (uint32_t)((HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1) + 1) / Vout2 * Vdda) - 1;
+            if(arr < 10000) __HAL_TIM_SetAutoreload(&htim2, arr);
         }
 
         // TM1638的数码管&LED配置
-        uint8_t data[16] = {0};
+        uint16_t data[8] = {0};
 
-        FloatToSegments((HAL_GetTick() - VrmsSelectTick < VrmsRemainTime ? Vrms100 : freq100) / 100.0f, data);
-        // DoubleToSegments(sTime.Hours * 10000 + sTime.Minutes * 100 + sTime.Seconds + (1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1)) * 0.001, data);
-        for(int i = 0; i < 8; i++)
+        // 显示频率或幅值
+        uint8_t flag = HAL_GetTick() - VrmsSelectTick >= VrmsRemainTime;
+        TM1638_FloatToSegments((flag ? freq100 : Vrms100) / 100.0f, data);
+        TM1638_WriteSegments((flag ? 5 : 6), 7, data);
+
+        // 显示波形
+        switch(waveForm1)
         {
-            data[i * 2 + 1] = TM1638_KeyStatus(3, i + 1) == KEY_LONGPRESS ? 0xFF : 0xFE;
+            case SAWTOOTH:
+            {
+                TM1638_WriteSegments(7, 7, data);
+                break;
+            }
+            case SQUARE:
+            {
+                TM1638_WriteSegments(8, 7, data);
+                break;
+            }
+            case TRIANGLE:
+            {
+                TM1638_WriteSegments(9, 7, data);
+                break;
+            }
+            case SINE:
+            {
+                TM1638_WriteSegments(10, 7, data);
+                break;
+            }
+            default:
+            {
+                break;
+            }
         }
-        TM1638_DisplayDigits(data);
+
+        // 输出显示
+        TM1638_Display(data);
     }
     TASK_END(WAVECTRL)
 
-    TASK_START(LED, 30)
+    TASK_START(LED, 1000)
     {
-        HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-        HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 
         const uint8_t fractional_precision = 4;
         const float pow10fp = powf(10.0f, fractional_precision);
@@ -217,7 +249,7 @@ void Loop(void)
         int Temp_t1 = truncf(Temp), Temp_t100 = truncf(Temp * pow10fp) - Temp_t1 * pow10fp;
 
         char* dac_ch1_wave;
-        switch(wave1)
+        switch(waveForm1)
         {
             case SINE: dac_ch1_wave = "SINE"; break;
             case TRIANGLE: dac_ch1_wave = "TRIANGLE"; break;
@@ -227,7 +259,6 @@ void Loop(void)
         }
 
         printf("\033[2J\033[1H\n");
-        printf("%2d-%2d-%2d %2d:%02d:%02d.%03ld\n", sDate.Year, sDate.Month, sDate.Date, sTime.Hours, sTime.Minutes, sTime.Seconds, 1000 - sTime.SubSeconds * 1000 / (sTime.SecondFraction + 1));
         printf("Vdda: %d.%0*d, Vbat: %d.%0*d, Temp: %d.%0*d\n", Vdda_t1, fractional_precision, Vdda_t100, Vbat_t1, fractional_precision, Vbat_t100, Temp_t1, fractional_precision, Temp_t100);
         printf("dac_ch1: wave: %s, freq: %d.%02d, Vrms: %d.%02d\n", dac_ch1_wave, freq100 / 100, freq100 % 100, Vrms100 / 100, Vrms100 % 100);
         printf("\n");
@@ -239,6 +270,44 @@ void Loop(void)
     __WFE();
 }
 
+/**
+  * @brief      串口发送完成回调函数
+  * @retval     none
+  * @note       重启串口接收
+  */
+void UART_TxCpltCallback(void)
+{
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
+}
+
+/**
+  * @brief      串口接收空闲回调函数
+  * @param[in]  Size    接收字节数
+  * @retval     none
+  * @note       回显接收数据
+  */
+void UART_RxEventCallback(uint16_t Size)
+{
+    buf[Size] = '\n';
+    HAL_UART_Transmit_DMA(&huart2, buf, Size);
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
+}
+
+/**
+  * @brief      串口错误回调函数
+  * @retval     none
+  * @note       重启串口接收
+  */
+void UART_ErrorCallback(void)
+{
+    HAL_UARTEx_ReceiveToIdle_DMA(&huart2, buf, sizeof(buf) - 1);
+}
+
+/**
+  * @brief      对于无符号整数，返回它的数量级
+  * @param[in]  v100    无符号整数（放大到100倍）
+  * @retval     数量级
+  */
 static uint32_t Int100Digits(uint32_t v100)
 {
     if (v100 < 1000)       return 1;

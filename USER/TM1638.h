@@ -23,8 +23,9 @@ typedef enum
 void TM1638_DisplayBrightness(uint8_t brightness);
 uint32_t TM1638_ReadKeys(void);
 KeyStatus_t TM1638_KeyStatus(uint8_t k, uint8_t ks);
-void TM1638_DisplayDigits(uint8_t data[16]);
-void FloatToSegments(float value, uint8_t data[16]);
+void TM1638_Display(uint16_t data[8]);
+void TM1638_WriteSegments(uint8_t seg, uint8_t grid, uint16_t data[8]);
+void TM1638_FloatToSegments(float value, uint16_t data[8]);
 
 /* Private defines -----------------------------------------------------------*/
 

@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "main.h"
+#include "stm32f0xx_hal_def.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* Private typedef -----------------------------------------------------------*/
@@ -21,7 +22,7 @@ typedef struct
 } Key_t;    // (k, ks)
 
 /* Private define ------------------------------------------------------------*/
-#define TM1638_hspi             hspi2
+#define TM1638_hspi             hspi1
 #define longpressCount          10      // 判断单击与长按的阈值(ms)
 #define segNum                  6       // 数码管段数
 #define fractional_precision    2       // 向数码管输出浮点数的小数位数
@@ -81,7 +82,15 @@ uint32_t TM1638_ReadKeys(void)
     TM1638_STB_HIGH();         // 拉高STB，结束帧
 
     // 多键按下检测，关闭所有灯光
-    if((rxData & (rxData - 1)) != 0) TM1638_DisplayBrightness(0); else TM1638_DisplayBrightness(8);
+    if((rxData & (rxData - 1)) != 0)
+    {
+        TM1638_DisplayBrightness(0);
+        rxData = 0;
+    }
+    else
+    {
+        TM1638_DisplayBrightness(8);
+    }
 
     // 按键状态判定
     for(uint8_t k = 1; k <= 4; k++)
@@ -181,29 +190,41 @@ KeyStatus_t TM1638_KeyStatus(uint8_t k, uint8_t ks)
 
 /**
   * @brief      发送TM1638传输数组
-  * @param[in]  data[16]    TM1638传输数组
+  * @param[in]  data[8] TM1638传输数组
   * @retval     none
   */
-void TM1638_DisplayDigits(uint8_t data[16])
+void TM1638_Display(uint16_t data[8])
 {
     TM1638_SendCommand(0x40); // 自动地址递增命令
     TM1638_STB_LOW();
     TM1638_WriteByte(0xC0);   // 起始地址
-    HAL_SPI_Transmit(&TM1638_hspi, data, 16, HAL_MAX_DELAY);
+    HAL_SPI_Transmit(&TM1638_hspi, (uint8_t*)data, 16, HAL_MAX_DELAY);
     TM1638_STB_HIGH();
 }
 
 /**
-  * @brief      将浮点数化为TM1638格式
-  * @param[in]  value       浮点数
-  * @param[out] data[16]    TM1638传输数组
+  * @brief      点亮TM1638指定位的LED，写入TM1638传输数组
+  * @param[in]  seg     段连接位
+  * @param[in]  grid    共阴极连接位
+  * @param[out] data[8] TM1638传输数组
   * @retval     none
   */
-void FloatToSegments(float value, uint8_t data[16])
+void TM1638_WriteSegments(uint8_t seg, uint8_t grid, uint16_t data[8])
+{
+    if(seg >= 1 && seg <= 10 && grid >= 1 && grid <= 8) data[(grid - 1)] |= 1 << (seg - 1);
+}
+
+/**
+  * @brief      将浮点数化为TM1638格式，并写入TM1638传输数组
+  * @param[in]  value   浮点数
+  * @param[out] data[8] TM1638传输数组
+  * @retval     none
+  */
+void TM1638_FloatToSegments(float value, uint16_t data[8])
 {
     char s[segNum + 2]; // 预留小数点和'\0'标识
     char* ps = s;
-    uint8_t* pdata = data;
+    uint16_t* pdata = data;
 
     if(segNum > 8) return;
 
@@ -230,7 +251,7 @@ void FloatToSegments(float value, uint8_t data[16])
     }
 
     // 转换字符串为TM1638格式
-    while(*ps != '\0' && pdata < data + segNum * 2)
+    while(*ps != '\0' && pdata < data + segNum)
     {
         if(isdigit((uint8_t)*ps))
         {
@@ -245,7 +266,7 @@ void FloatToSegments(float value, uint8_t data[16])
         {
             *pdata = 0x40;
         }
-        pdata += 2;
+        pdata += 1;
         ps += 1;
     }
 }

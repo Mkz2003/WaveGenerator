@@ -19,7 +19,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 # Set the project name
-set(CMAKE_PROJECT_NAME WaveGenerator)
+set(CMAKE_PROJECT_NAME JXM-AUDIO-SIGNAL-01-2026-07-TEST)
 
 # Enable compile command to ease indexing with e.g. clangd
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
@@ -49,8 +49,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/USER/TM1638.c
     ${CMAKE_CURRENT_LIST_DIR}/USER/MyCode.c
     ${CMAKE_CURRENT_LIST_DIR}/USER/io.c
-    ${CMAKE_CURRENT_LIST_DIR}/USER/Callback.c
-    ${CMAKE_CURRENT_LIST_DIR}/USER/Date.c    
+    ${CMAKE_CURRENT_LIST_DIR}/USER/Callback.c 
 )
 
 # Add include paths
@@ -72,32 +71,4 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
 
     # Add user defined libraries
-
-    ${CMAKE_CURRENT_LIST_DIR}/Drivers/CMSIS/DSP/Lib/GCC/libarm_cortexM0l_math.a
 )
-
-# target_link_options(${CMAKE_PROJECT_NAME} PRIVATE
-#     -u _printf_float
-# )
-
-# 1. 列出所有需要强制编译的源文件（相对于项目根目录）
-set(FORCE_COMPILE_SOURCES
-    # 可继续添加更多文件
-    ${CMAKE_CURRENT_LIST_DIR}/USER/Date.c
-    
-)
-
-# 2. 生成所有 touch 命令
-set(TOUCH_COMMANDS "")
-foreach(src ${FORCE_COMPILE_SOURCES})
-    list(APPEND TOUCH_COMMANDS COMMAND ${CMAKE_COMMAND} -E touch_nocreate ${src})
-endforeach()
-
-# 3. 创建自定义目标，执行所有 touch 命令
-add_custom_target(ForceCompileSources
-    ${TOUCH_COMMANDS}
-    COMMENT "Forcing recompilation of specified source files"
-)
-
-# 4. 将自定义目标添加为主目标的依赖
-add_dependencies(${CMAKE_PROJECT_NAME} ForceCompileSources)

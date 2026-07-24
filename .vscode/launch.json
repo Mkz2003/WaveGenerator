@@ -1,7 +1,7 @@
 {
     "configurations": [
         {
-            "name": "CMSIS-DAP Debug (G0) (Debug Only --Release)",
+            "name": "CMSIS-DAP Debug (F0) (Debug Only --Release)",
             "type": "cortex-debug",
             "request": "attach",
             "servertype": "openocd",
@@ -11,11 +11,11 @@
                 "${workspaceFolder}/openocd.cfg"
             ],
             "executable": "${workspaceFolder}/build/Release/${workspaceFolderBasename}.elf",
-            "device": "STM32G071xx",
-            "svdPath": "${workspaceFolder}/STM32G071.svd"
+            "device": "STM32F051xx",
+            "svdPath": "${workspaceFolder}/STM32F0x1.svd"
         },
         {
-            "name": "CMSIS-DAP Debug (G0) (Debug)",
+            "name": "CMSIS-DAP Debug (F0) (Debug)",
             "type": "cortex-debug",
             "request": "launch",
             "servertype": "openocd",
@@ -25,8 +25,8 @@
                 "${workspaceFolder}/openocd.cfg"
             ],
             "executable": "${workspaceFolder}/build/Debug/${workspaceFolderBasename}.elf",
-            "device": "STM32G071xx",
-            "svdPath": "${workspaceFolder}/STM32G071.svd"
+            "device": "STM32F051xx",
+            "svdPath": "${workspaceFolder}/STM32F0x1.svd"
         },
         {
             "name": "OpenOCD Debug",
