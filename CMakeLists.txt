@@ -70,4 +70,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     stm32cubemx
 
     # Add user defined libraries
+    ${CMAKE_CURRENT_LIST_DIR}/Drivers/CMSIS/Lib/GCC/libarm_cortexM0l_math.a
 )

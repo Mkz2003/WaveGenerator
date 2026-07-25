@@ -94,7 +94,7 @@ void Loop(void)
     TASK_START(WAVECTRL, 20)
     {
         const uint32_t freq100Max = 10000000, freq100Min = 10;
-        const uint32_t Vrms100Max = 100, Vrms100Min = 1;
+        const uint32_t Vrms100Max = 450, Vrms100Min = 1;
 
         // 从TM1638读按键
         TM1638_ReadKeys();

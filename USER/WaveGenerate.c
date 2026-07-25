@@ -127,7 +127,7 @@ static void init_table(const Wave_t* const wave, float Vdda)
         {
             case SINE:
             {
-                value = (sinf(rad) * (coef * DAC_MAXVAL / 2.0f)) + (DAC_MAXVAL / 2.0f);
+                value = (arm_sin_f32(rad) * (coef * DAC_MAXVAL / 2.0f)) + (DAC_MAXVAL / 2.0f);
                 break;
             }
             case SQUARE:
@@ -137,7 +137,7 @@ static void init_table(const Wave_t* const wave, float Vdda)
             }
             case TRIANGLE:
             {
-                value = (float)M_2_PI * asinf(sinf(rad)) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
+                value = (rad < (float)M_PI_2 ? rad : rad < 1.5f * (float)M_PI ? (float)M_PI - rad : rad - (float)M_TWOPI) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
                 break;
             }
             case SAWTOOTH:
