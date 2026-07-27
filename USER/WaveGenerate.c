@@ -117,7 +117,9 @@ __attribute__((always_inline)) static inline uint16_t dac_value_from_phase(uint3
 static void init_table(const Wave_t* const wave, float Vdda)
 {
     // 生成系数
+    const float DAC_MAXVAL_half = DAC_MAXVAL / 2.0f;
     float coef = Vrms2Vp(wave) / (Vdda / 2.0f);
+    float Vp = coef * DAC_MAXVAL_half;
 
     for (int i = 0; i < TABLE_SIZE; i++)
     {
@@ -127,28 +129,28 @@ static void init_table(const Wave_t* const wave, float Vdda)
         {
             case SINE:
             {
-                value = (arm_sin_f32(rad) * (coef * DAC_MAXVAL / 2.0f)) + (DAC_MAXVAL / 2.0f);
+                value = (arm_sin_f32(rad) * Vp) + DAC_MAXVAL_half;
                 break;
             }
             case SQUARE:
             {
-                value = (rad < (float)M_PI ? 1.0f : -1.0f) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
+                value = (rad < (float)M_PI ? 1.0f : -1.0f) * Vp + DAC_MAXVAL_half;
                 break;
             }
             case TRIANGLE:
             {
-                value = (rad < (float)M_PI_2 ? rad : rad < 1.5f * (float)M_PI ? (float)M_PI - rad : rad - (float)M_TWOPI) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
+                value = (float)M_2_PI * (rad < (float)M_PI_2 ? rad : rad < 1.5f * (float)M_PI ? (float)M_PI - rad : rad - (float)M_TWOPI) * Vp + DAC_MAXVAL_half;
                 break;
             }
             case SAWTOOTH:
             {
-                value = (rad / (float)M_PI - 1.0f) * (coef * DAC_MAXVAL / 2.0f) + (DAC_MAXVAL / 2.0f);
+                value = (rad * (float)M_1_PI - 1.0f) * Vp + DAC_MAXVAL_half;
                 break;
             }
             case DC:
             default:
             {
-                value = (DAC_MAXVAL / 2.0f);
+                value = DAC_MAXVAL_half;
                 break;                    
             }
         }
