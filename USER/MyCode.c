@@ -7,10 +7,11 @@
 #include <stdlib.h>
 
 #include "main.h"
-#include "stm32f0xx_hal_tim.h"
+#include "stm32f0xx_hal.h"
 #include "stm32f0xx_ll_adc.h"
 
 /* Private includes ----------------------------------------------------------*/
+#include "ADCFilter.h"
 #include "WaveGenerate.h"
 #include "TM1638.h"
 
@@ -38,6 +39,8 @@ WaveForm_t waveForm1 = SINE;
 
 volatile struct {volatile uint16_t Temp, Vref, Vbat;} adcval = {0};
 float Vdda = 0.0f, Vbat = 0.0f, Temp = 0.0f;
+float vrefint_cal_vref, temperature_cal1_temp, temperature_cal2_temp, vrefint_cal_addr, tempsensor_cal1_addr, tempsensor_cal2_addr;
+ADCFilter_t filter_Vdda, filter_Vbat, filter_Temp;
 
 /* Private function prototypes -----------------------------------------------*/
 static uint32_t Int100Digits(uint32_t v100);
@@ -54,14 +57,24 @@ extern TIM_HandleTypeDef htim2;
   */
 void Setup(void)
 {
+    vrefint_cal_vref = (VREFINT_CAL_VREF / 1000.0f);
+    temperature_cal1_temp = TEMPSENSOR_CAL1_TEMP;
+    temperature_cal2_temp = TEMPSENSOR_CAL2_TEMP;
+    vrefint_cal_addr = (*VREFINT_CAL_ADDR);
+    tempsensor_cal1_addr = (*TEMPSENSOR_CAL1_ADDR);
+    tempsensor_cal2_addr = (*TEMPSENSOR_CAL2_ADDR);
+
+    ADCFilter_Init(&filter_Vdda, 100.0f, 10.0f);
+    ADCFilter_Init(&filter_Vbat, 100.0f, 10.0f);
+    ADCFilter_Init(&filter_Temp, 100.0f, 10.0f);
+    HAL_ADCEx_Calibration_Start(&hadc);
+    HAL_ADC_Start_DMA(&hadc, (uint32_t*)&adcval, sizeof(adcval) / sizeof(uint16_t));
+
     __HAL_TIM_SET_AUTORELOAD(&htim2, HAL_TIM_ReadCapturedValue(&htim2, TIM_CHANNEL_1) - 1);
     HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
     
     Wave_t wave1 = {waveForm1, freq100 / 100.0f, Vrms100 / 100.0f, 0.0f};
-    Set_Wave(&wave1, 3.3f, 1);
-
-    HAL_ADCEx_Calibration_Start(&hadc);
-    HAL_ADC_Start_DMA(&hadc, (uint32_t*)&adcval, sizeof(adcval) / sizeof(uint16_t));
+    Set_Wave(&wave1, 3.3f, 1);   
 }
 
 /**
@@ -73,21 +86,19 @@ void Loop(void)
 
     TASK_INIT()
 
-    TASK_START(ADCSAMPLING, 1)
+    TASK_START(ADCSAMPLING, 10)
     {
-        float vrefint_cal_vref = (VREFINT_CAL_VREF / 1000.0);
-        float temperature_cal1_temp = TEMPSENSOR_CAL1_TEMP;
-        float temperature_cal2_temp = TEMPSENSOR_CAL2_TEMP;
-        float vrefint_cal_addr = (*VREFINT_CAL_ADDR);
-        float tempsensor_cal1_addr = (*TEMPSENSOR_CAL1_ADDR);
-        float tempsensor_cal2_addr = (*TEMPSENSOR_CAL2_ADDR);
-        Vdda = vrefint_cal_vref * vrefint_cal_addr / adcval.Vref;
-        Vbat = adcval.Vbat * Vdda / (float)(1 << 12) * 2.0f;
+        float _Vdda = vrefint_cal_vref * vrefint_cal_addr / adcval.Vref;
+        float _Vbat = adcval.Vbat * _Vdda / (float)(1 << 12) * 2.0f;
         // Temp = t1 + ((ADC) - adc1) * (t2 - t1) / (adc2 - adc1)
-        Temp = temperature_cal1_temp
-                    + (adcval.Temp / vrefint_cal_vref * Vdda - tempsensor_cal1_addr)
+        float _Temp = temperature_cal1_temp
+                    + (adcval.Temp / vrefint_cal_vref * _Vdda - tempsensor_cal1_addr)
                         * (temperature_cal2_temp - temperature_cal1_temp)
-                        / (tempsensor_cal2_addr - tempsensor_cal1_addr);           
+                        / (tempsensor_cal2_addr - tempsensor_cal1_addr);
+                        
+        Vdda = ADCFilter(&filter_Vdda, _Vdda);
+        Vbat = ADCFilter(&filter_Vbat, _Vbat);
+        Temp = ADCFilter(&filter_Temp, _Temp);
     }
     TASK_END(ADCSAMPLING)
 

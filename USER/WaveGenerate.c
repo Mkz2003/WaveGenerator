@@ -2,7 +2,6 @@
 #include "WaveGenerate.h"
 
 #include <arm_math.h>
-#include <math.h>
 
 #include "main.h"
 
@@ -123,7 +122,7 @@ static void init_table(const Wave_t* const wave, float Vdda)
 
     for (int i = 0; i < TABLE_SIZE; i++)
     {
-        float rad = (float)M_TWOPI * i / TABLE_SIZE;
+        float rad = 2.0f * PI * i / TABLE_SIZE;
         int16_t value;
         switch(wave->waveForm)
         {
@@ -134,17 +133,17 @@ static void init_table(const Wave_t* const wave, float Vdda)
             }
             case SQUARE:
             {
-                value = (rad < (float)M_PI ? 1.0f : -1.0f) * Vp + DAC_MAXVAL_half;
+                value = (rad < PI ? 1.0f : -1.0f) * Vp + DAC_MAXVAL_half;
                 break;
             }
             case TRIANGLE:
             {
-                value = (float)M_2_PI * (rad < (float)M_PI_2 ? rad : rad < 1.5f * (float)M_PI ? (float)M_PI - rad : rad - (float)M_TWOPI) * Vp + DAC_MAXVAL_half;
+                value = 2.0f / PI * (rad < PI / 2.0f ? rad : rad < 1.5f * PI ? PI - rad : rad - 2.0f * PI) * Vp + DAC_MAXVAL_half;
                 break;
             }
             case SAWTOOTH:
             {
-                value = (rad * (float)M_1_PI - 1.0f) * Vp + DAC_MAXVAL_half;
+                value = (rad / PI - 1.0f) * Vp + DAC_MAXVAL_half;
                 break;
             }
             case DC:
