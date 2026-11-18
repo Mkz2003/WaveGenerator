@@ -55,8 +55,13 @@ void Set_Wave(const Wave_t* const wave, float Vdda, uint8_t waveConfig)
         init_table(wave, Vdda);
         if(waveConfig)
         {
-            HAL_TIM_Base_Stop(&WaveGenerate_htim1);
-            phase_step = (uint32_t)(wave->freq * (float)(uint32_t)(-1) / 1000000.0f);
+            phase_step = (uint32_t)(wave->freq * (float64_t)(uint32_t)(-1) / 1000000.0);
+        }
+
+        static uint8_t init = 0;
+        if(!init)
+        {
+            init = 1;
             HAL_DAC_Start_DMA(&WaveGenerate_hdac, DAC_CHANNEL_1, (uint32_t*)dac_buf, FULL_BUF, DAC_ALIGN_12B_R);
             HAL_TIM_Base_Start(&WaveGenerate_htim1);
         }
